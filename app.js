@@ -1,9 +1,7 @@
 "use strict";
 (function () {
   var NEAREST = 5, MIN_SHARE = 0.01;
-  var COLORS = { "מחל": "#245b94", "דרך": "#ed9859", "רק": "#ce542d", "אמת": "#a72f65", "ל": "#9e3826",
-    "ודם": "#267b44", "עם": "#80b667", "ג": "#65adb5", "שס": "#147c88", "ב": "#514394", "ט": "#7d67b3",
-    "ני": "#b29bda", "ך": "#597fbd", "די": "#b48727", "זך": "#3d8f99" };
+  var COLORS = {};
   var OTHER = "#8c939b";
   var D = null, P = [], marker = null, layerNear = null, allLayer = null;
   var $ = function (id) { return document.getElementById(id); };
@@ -25,6 +23,7 @@
   status("טוען נתונים…");
   fetch("data/kalpiot26.json").then(function (r) { return r.json(); }).then(function (d) {
     D = d; P = d.parties;
+    P.forEach(function (p) { COLORS[p[0]] = p[4]; });
     d.b.forEach(function (b) { b.agg = aggregate(b.k); });
     allLayer = L.layerGroup(d.b.map(function (b) {
       var top = b.agg.parties[0];
@@ -34,9 +33,11 @@
         .on("click", function (e) { L.DomEvent.stopPropagation(e); });
     }));
     map.on("zoomend", toggleAll); toggleAll();
-    $("ver").textContent = "גרסת הנתונים: הספירה המאושרת העדכנית ביותר בעותק של harelc (עודכן 31.10.2026), " +
-      fmt(d.b.reduce(function (s, b) { return s + b.k.length; }, 0)) + " קלפיות ב-" + fmt(d.b.length) +
-      " מקומות. נבנה ב-" + d.built + ". ייתכנו הבדלים קטנים מהתוצאות הסופיות הרשמיות.";
+    var asOf = d.source_as_of ? new Date(d.source_as_of).toLocaleString("he-IL", { timeZone: "Asia/Jerusalem", dateStyle: "short", timeStyle: "short" }) : "?";
+    var nk = d.b.reduce(function (s, b) { return s + b.k.length; }, 0);
+    var ver = "גרסת הנתונים: ספירה רשמית של ועדת הבחירות המרכזית, תמונת מצב מ-" + asOf + " (שעון ישראל), " +
+      fmt(nk) + " קלפיות ב-" + fmt(d.b.length) + " מקומות. ייתכנו הבדלים קטנים מהפרסום הסופי הרשמי.";
+    $("ver").textContent = ver; $("dataver").textContent = ver;
     status("");
     var q = new URLSearchParams(location.search).get("q");
     if (q) { $("q").value = q; search(); }
