@@ -26,7 +26,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700;900&family=Heebo:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=geo3">
 <link rel="stylesheet" href="share/share.css">
 </head>
 <body>
@@ -49,12 +49,12 @@
         <label for="q" class="search-label">כתובת או יישוב</label>
         <div class="field">
           <svg class="field-icon" aria-hidden="true" viewBox="0 0 24 24" width="22" height="22"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <input id="q" type="search" placeholder="רחוב, מספר ויישוב. למשל: הרצל 1, חולון" autocomplete="street-address" enterkeyhint="search" aria-describedby="q-hint q-note" aria-keyshortcuts="/">
+          <input id="q" type="search" placeholder="רחוב, מספר ויישוב. למשל: הרצל 1, ראשון לציון" autocomplete="street-address" enterkeyhint="search" aria-describedby="q-hint q-note" aria-keyshortcuts="/">
           <button id="clearQ" type="button" class="clear" aria-label="ניקוי החיפוש" hidden><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
           <button id="go" class="primary" type="submit">חיפוש</button>
         </div>
         <div class="search-aux">
-          <span id="q-hint">נסו: <button type="button" class="example" data-q="הרצל 1, חולון">הרצל 1, חולון</button><button type="button" class="example" data-q="שכונת הדר, חיפה">שכונת הדר, חיפה</button><button type="button" class="example" data-q="רהט">רהט</button><button type="button" class="example" data-q="דרך הציונות 20, אריאל">דרך הציונות 20, אריאל</button></span>
+          <span id="q-hint">נסו: <button type="button" class="example" data-q="הרצל 1, ראשון לציון">הרצל 1, ראשון לציון</button><button type="button" class="example" data-q="שכונת הדר, חיפה">שכונת הדר, חיפה</button><button type="button" class="example" data-q="רהט">רהט</button><button type="button" class="example" data-q="דרך הציונות 20, אריאל">דרך הציונות 20, אריאל</button></span>
           <button id="loc" type="button" class="ghost" title="השתמשו במיקום הנוכחי שלכם"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="3.5" fill="currentColor"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3" stroke="currentColor" stroke-width="1.8"/></svg>המיקום שלי</button>
         </div>
         <p id="q-note" class="q-note">אפשר גם ללחוץ על המפה. אנחנו לא שומרים את מה שחיפשתם.</p>
@@ -107,7 +107,8 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="app.js"></script>
+<script src="kalpi-geocode.js?v=geo3"></script>
+<script src="app.js?v=geo3"></script>
 <script>window.KalpiShareConfig = { siteUrl: "https://zozo123.github.io/kalpi-map/", quiz: false };</script>
 <script src="share/share.js" defer></script>
 </body>

@@ -88,6 +88,7 @@
   status("טוען נתונים…");
   fetch("data/kalpiot26.json").then(function (r) { return r.json(); }).then(function (d) {
     D = d; P = d.parties;
+    setTimeout(function () { try { acLocs(); } catch (e) {} }, 400); // warm the typeahead's locality list off the keystroke path
     setTimeout(layerSelect, 0);
     P.forEach(function (p) { COLORS[p[0]] = p[4]; });
     d.b.forEach(function (b) { b.agg = aggregate(b.k); });
@@ -221,7 +222,7 @@
     render(near, label);
     extras().then(function () { if (lastNear === near) render(near, label); });
     // Exposed for automated tests (no network side effects)
-    window.kalpiLast = { lat: lat, lon: lon, prec: prec || "manual", barzel: [].concat.apply([], near.map(function (n) { return n.b.k.map(function (k) { return k[0]; }); })), c: ctx.c || null, scope: scope };
+    window.kalpiLast = { lat: lat, lon: lon, prec: prec || "manual", barzel: [].concat.apply([], near.map(function (n) { return n.b.k.map(function (k) { return k[0]; }); })), c: ctx.c || null, scope: scope, src: ctx.src || "", why: ctx.why || "" };
     try { document.dispatchEvent(new CustomEvent("kalpi:located", { detail: window.kalpiLast })); } catch (e) {}
   }
 
@@ -240,6 +241,7 @@
   var scrollOnRender = false, where = null, TS = "", openPlace = -1;
   var BADGE = {
     house: ["כתובת מדויקת", "ok", "הכתובת נמצאה עד רמת מספר הבית."], street: ["רחוב בלבד", "warn", "מספר הבית לא נמצא; הנקודה היא על הרחוב."],
+    interp: ["כתובת משוערת", "ok", "מספר הבית משוער לפי הבתים הסמוכים ברחוב."], estreet: ["מיקום משוער לפי הרחוב", "warn", "הרחוב נמצא; מיקום הבית משוער."],
     area: ["שכונה או אזור", "warn", "הנקודה היא מרכז השכונה או האזור."], settlement: ["מרכז היישוב", "warn", "הכתובת לא נמצאה; מוצגות קלפיות סמוך למרכז היישוב."],
     local: ["לפי כתובת של קלפי", "warn", "נמצאה קלפי שכתובתה דומה למה שהוקלד."], manual: ["נקודה שבחרתם", "neutral", "הנקודה נבחרה במפה."],
     geo: ["המיקום שלי", "neutral", "לפי המיקום שהדפדפן מסר. לא נשמר."], kalpi: ["קלפי", "neutral", "נפתח מקישור לקלפי."]
@@ -773,7 +775,8 @@
     var n = 0; for (var i = 0; i < t.length; i++) { if (!HEB[t[i]]) return null; n += HEB[t[i]]; }
     return n;
   }
-  var ALIASES = { "נצרת עילית": "נוף הגליל", "פתח תקוה": "פתח תקווה", "מודיעין מכבים רעות": "מודיעין-מכבים-רעות", "מודיעין": "מודיעין-מכבים-רעות", "בנימינה": "בנימינה-גבעת עדה", "ת\"א": "תל אביב-יפו", "תא": "תל אביב-יפו", "תל אביב": "תל אביב-יפו", "יפו": "תל אביב-יפו", "תל-אביב": "תל אביב-יפו",
+  var ALIASES = { "פ\"ת": "פתח תקווה", "ב\"ש": "באר שבע", "ראשל\"צ": "ראשון לציון", "ראשלצ": "ראשון לציון", "ראשל\"צ.": "ראשון לציון",
+    "ר\"ג": "רמת גן", "ב\"ב": "בני ברק", "ק\"ש": "קריית שמונה", "ק\"ג": "קריית גת", "ק\"א": "קריית אתא", "ק. שמונה": "קריית שמונה", "ת\"א-יפו": "תל אביב-יפו", "ת\"א יפו": "תל אביב-יפו", "נצרת עילית": "נוף הגליל", "פתח תקוה": "פתח תקווה", "מודיעין מכבים רעות": "מודיעין-מכבים-רעות", "מודיעין": "מודיעין-מכבים-רעות", "בנימינה": "בנימינה-גבעת עדה", "ת\"א": "תל אביב-יפו", "תא": "תל אביב-יפו", "תל אביב": "תל אביב-יפו", "יפו": "תל אביב-יפו", "תל-אביב": "תל אביב-יפו",
     // Arabic and English city names (lower-case keys for Latin script).
     "القدس": "ירושלים", "حيفا": "חיפה", "يافا": "תל אביב-יפו", "تل أبيب": "תל אביב-יפו", "تل ابيب": "תל אביב-יפו", "الناصرة": "נצרת", "الناصره": "נצרת", "أم الفحم": "אום אל-פחם", "ام الفحم": "אום אל-פחם",
     "رهط": "רהט", "عكا": "עכו", "اللد": "לוד", "الرملة": "רמלה", "الطيبة": "טייבה", "الطيبه": "טייבה", "شفاعمرو": "שפרעם", "سخنين": "סח'נין", "طمرة": "טמרה", "الطيرة": "טירה", "كفر قاسم": "כפר קאסם", "بئر السبع": "באר שבע",
@@ -784,7 +787,7 @@
   function alias(c) { var t = c.trim(); return ALIASES[t] || ALIASES[plain(t)] || ALIASES[t.toLowerCase()] || ALIASES[plain(t).toLowerCase()] || null; }
 
   function normalize(q) {
-    var s = q.replace(/[،؛]/g, ",").replace(/״/g, '"').replace(/[׳`’]/g, "'").replace(/[–־]/g, "-").replace(/\s+/g, " ").trim();
+    var s = q.replace(/[\u0591-\u05C7]/g, "").replace(/[،؛]/g, ",").replace(/״/g, '"').replace(/[׳`’]/g, "'").replace(/[–־]/g, "-").replace(/\s+/g, " ").trim();
     s = s.replace(/(^|,\s*)(רחוב|רח'|רח\.|רח|شارع|street|st\.)\s+/gi, "$1");
     s = s.replace(/(^|[\s,])(שד'|שד\.)\s*/g, "$1שדרות ");
     s = s.replace(/^(מושב|קיבוץ|קבוץ)\s+(?=\S)/, "");
@@ -857,10 +860,15 @@
   }
   function cityOk(names, p) {
     if (!p.city) return true;
-    var want = [skel(p.city)]; if (p.loc) want.push(skel(p.loc.name), skel(p.loc.name.split(/\s+-\s+/)[0]));
+    // Compare whole words only: every run of consecutive words of each name, as a skeleton. (Skeleton substrings
+    // matched "מועצה אזורית חוף הכרמל" to חיפה, since חוף ה... folds to the same letters.)
+    function runs(nm) { var w = plain(nm).split(" "), out = {}, i, j; for (i = 0; i < w.length; i++) for (j = i + 1; j <= Math.min(w.length, i + 4); j++) { var k = skel(w.slice(i, j).join(" ")); if (k.length >= 2) out[k] = 1; } return out; }
+    var want = runs(p.city); if (p.loc) { var r1 = runs(p.loc.name); for (var k1 in r1) want[k1] = 1; }
+    var whole = [skel(p.city)].concat(p.loc ? [skel(p.loc.name), skel(p.loc.name.split(/\s+-\s+/)[0])] : []);
     return names.some(function (nm) {
-      if (!nm) return false; var s = skel(nm);
-      return want.some(function (w) { return w.length >= 2 && (s === w || (s.length >= 3 && w.indexOf(s) >= 0) || (w.length >= 3 && s.indexOf(w) >= 0)); });
+      if (!nm) return false; var s = skel(nm), r = runs(nm);
+      if (whole.indexOf(s) >= 0) return true;
+      return whole.some(function (w) { return w.length >= 2 && r[w]; }) || (s.length >= 2 && want[s]);
     });
   }
   // Street names: also fold common transliteration variants (צלאח/סלאח, ת/ט, ק/כ).
@@ -876,6 +884,9 @@
         var r = res[i], a = r.address || {};
         if (!cityOk([a.city, a.town, a.village, a.hamlet, a.municipality, a.suburb, a.city_district, a.isolated_dwelling], p)) continue;
         var prec = a.house_number ? "house" : (r.category === "highway" || r.addresstype === "road") ? "street" : "area";
+        // A park, school or shop named after the street ("גן הרצל") is not the street: only places/boundaries count as areas.
+        if (prec === "area" && p.street && r.category !== "place" && r.category !== "boundary") continue;
+        if (prec === "area" && p.num) continue;
         return { lat: +r.lat, lon: +r.lon, label: r.display_name.split(",").slice(0, 4).join(",").trim(), prec: prec, src: "OpenStreetMap (" + how + ")" };
       }
       return null;
@@ -892,6 +903,9 @@
         // a fuzzy hit with no street must share at least one word with the query (ואדי אל נעם -> נחל פצאל is not a match)
         if (p.street && !pr.street && !p.street.split(/\s+/).some(function (w) { w = skel(w); return w.length >= 3 && skel(pr.name || "").indexOf(w) >= 0; })) continue;
         var prec = pr.housenumber ? "house" : pr.type === "street" ? "street" : "area";
+        // With a street typed, a POI (park, school, shop) that merely shares a word is not an answer.
+        if (prec === "area" && p.street && (p.num || (pr.osm_key !== "place" && pr.osm_key !== "boundary"))) continue;
+        if (prec === "street" && p.street && !pr.street && sskel(pr.name || "") !== sskel(p.street.replace(/^(שדרות|שכונת)\s+/, ""))) continue;
         var c = f[i].geometry.coordinates;
         return { lat: c[1], lon: c[0], label: [pr.name, pr.street && (pr.street + " " + (pr.housenumber || "")), pr.city].filter(Boolean).join(", "), prec: prec, src: "Photon" };
       }
@@ -929,16 +943,18 @@
     if (!streetsP[c]) streetsP[c] = throttled("datagov", "https://data.gov.il/api/3/action/datastore_search?resource_id=9ad3862c-8391-4b2f-84a4-2d4c68625f4b&limit=5000&fields=" +
       encodeURIComponent("שם_רחוב") + "&filters=" + encodeURIComponent(JSON.stringify({ "סמל_ישוב": c }))).then(function (r) {
       var set = {}; ((r.result || {}).records || []).forEach(function (x) { set[sskel(x["שם_רחוב"] || "")] = 1; });
-      return Object.keys(set).length ? set : null;
-    }, function () { return null; });
+      if (!Object.keys(set).length) { delete streetsP[c]; return null; }
+      return set;
+    }, function () { delete streetsP[c]; return null; });
     return streetsP[c];
   }
   function locByCode(c) { var L = localities(); for (var k in L) if (L[k].c === c) return L[k]; return null; }
   function cec(n, p) {
-    var q = cecQ(n); if ((q.match(/\p{L}/gu) || []).length < 2) return Promise.resolve(null);
+    var q = cecQ(n.replace(/(^|\s)(שכונת|שכונה|שכ')\s+/, "$1")); if ((q.match(/\p{L}/gu) || []).length < 2) return Promise.resolve(null);
     return throttled("cec", "https://d3i80z2x83yp3b.cloudfront.net/search?q=" + encodeURIComponent(q)).then(function (res) {
       res = Array.isArray(res) ? res : [];
-      var st = p.street ? sskel(p.street.replace(/^שדרות\s+/, "")) : "", locOk = function (r) { return p.loc ? r.c === p.loc.c : !p.city || cityOk([(r.n || "").split(", ").pop()], p); };
+      var nbq = /^(שכונת|שכונה|שכ')\s/.test(p.street || "");
+      var st = p.street ? sskel(p.street.replace(/^(שדרות|שכונת|שכונה|שכ')\s+/, "")) : "", locOk = function (r) { return p.loc ? r.c === p.loc.c : !p.city || cityOk([(r.n || "").split(", ").pop()], p); };
       function hit(r, prec) { var ll = merc2ll(r.x, r.y), l = locByCode(r.c); return { lat: ll[0], lon: ll[1], label: r.n, prec: prec, src: "ועדת הבחירות (חיפוש כתובות)", c: r.c, nb: r.h || null, cname: l && l.name }; }
       function stMatch(lbl) { var m = (lbl || "").split(", ")[0].match(/^(.*?)(?:\s(\d+)[א-ת]?)?$/); return m && { s: sskel(m[1].replace(/^שדרות\s+/, "")), n: m[2] || null }; }
       var cands = [];
@@ -950,7 +966,8 @@
         } else if (r.t === 2 && st) {
           var a2 = stMatch(r.n), b2 = stMatch(r.a);
           if ((a2 && a2.s === st) || (b2 && b2.s === st)) cands.push([1, r, "street"]);
-        } else if (r.t === 3 && !p.num && st && sskel(r.n.split(", ")[0]) === st) cands.push([2, r, "area"]);
+        } else if (r.t === 3 && !p.num && st && sskel(r.n.split(", ")[0]) === st) cands.push([nbq ? 0 : 2, r, "area"]);
+        else if (r.t === 3 && !p.num && nbq && sskel(r.n.split(", ")[0].split(" ")[0]) === st) cands.push([0.5, r, "area"]);
       });
       cands.sort(function (a, b) { return a[0] - b[0]; });
       if (!cands.length) return null;
@@ -965,10 +982,276 @@
   }
 
   var PREC = { house: "כתובת מדויקת", street: "רחוב בלבד (מספר הבית לא נמצא)", area: "שכונה/אזור", settlement: "מרכז היישוב", local: "לפי כתובת קלפי תואמת" };
+
+  // Offline street index (kalpi-geocode.js + geo/: OSM house numbers and streets, the data.gov.il street list, CEC
+  // neighborhoods). Answers exact addresses with no network and is the fallback when every online geocoder fails.
+  var GEO = null, OFFSRC = "אינדקס הרחובות של האתר (OpenStreetMap, data.gov.il)";
+  var RANKP = { house: 6, interp: 5, street: 4, estreet: 3, area: 2, settlement: 1 };
+  function geoIdx() { if (!GEO && window.KalpiGeo) try { GEO = window.KalpiGeo.create({ base: "geo/" }); } catch (e) {} return GEO; }
+  function inLocBox(r, l, m) { return r.lat >= l.s - m && r.lat <= l.nn + m && r.lon >= l.w - m && r.lon <= l.e + m; }
+  // Centroid of the polling places on a street (used when the street is on the official list but has no coordinates).
+  function venuesOn(c, street) {
+    var k = sskel(street), pts = D.b.filter(function (b) { return b.c === c && sskel(b.a.split(",")[0]) === k; });
+    if (!pts.length) return null;
+    return { lat: pts.reduce(function (a, b) { return a + b.y; }, 0) / pts.length, lon: pts.reduce(function (a, b) { return a + b.x; }, 0) / pts.length };
+  }
+  // Arabic street names -> Hebrew letters, the way Israeli street lists transliterate them (صلاح الدين -> צלאח אלדין),
+  // so the index's Hebrew names and their skeletons match (סלאח אל-דין).
+  var AR2HE = { "ا": "א", "أ": "א", "إ": "א", "آ": "א", "ء": "א", "ئ": "א", "ى": "א", "ب": "ב", "ت": "ת", "ث": "ת'", "ج": "ג'", "ح": "ח", "خ": "ח'",
+    "د": "ד", "ذ": "ד'", "ر": "ר", "ز": "ז", "س": "ס", "ش": "ש", "ص": "צ", "ض": "ד'", "ط": "ט", "ظ": "ט'", "ع": "ע", "غ": "ע'", "ف": "פ",
+    "ق": "ק", "ك": "כ", "ل": "ל", "م": "מ", "ن": "נ", "ه": "ה", "ة": "ה", "و": "ו", "ؤ": "ו", "ي": "י" };
+  function arToHe(s) {
+    if (!/[\u0600-\u06FF]/.test(s)) return s;
+    return s.replace(/[\u064B-\u065F\u0640]/g, "").replace(/(^|\s)شارع\s+/g, "$1").replace(/[\u0621-\u064A]/g, function (c) { return AR2HE[c] || ""; })
+      .replace(/(^|\s)אל(?=\S{2})/g, "$1אל-").replace(/[כמנפצ](?=\s|$)/g, function (c) { return { "כ": "ך", "מ": "ם", "נ": "ן", "פ": "ף", "צ": "ץ" }[c]; });
+  }
+  function offline(n, p) {
+    var g = geoIdx(); if (!g || !p.street) return Promise.resolve(null);
+    // Give the index the locality this app already resolved (its own skeleton lookup maps נהרייה to נהורה).
+    var st = arToHe(p.street);
+    var q = p.loc ? st + (p.num ? " " + p.num : "") + ", " + p.loc.name : n;
+    return g.search(q).then(function (r) {
+      if (!r || (p.loc ? r.c !== p.loc.c : !locByCode(r.c))) return null;
+      // Not an exact street name: fuzzy-match only among the streets of this one locality. Correct it silently only
+      // when a single street is a clear winner; otherwise leave it to the "did you mean" buttons.
+      if (p.loc && (r.fuzzy || (r.score || 0) < 0.8 || (r.prec === "settlement" && !r.street))) {
+        return scopedFuzzy(p.loc.c, p.street).then(function (fx) {
+          if (!fx.fix) return conv(r);
+          return g.search(fx.fix + (p.num ? " " + p.num : "") + ", " + p.loc.name).then(function (r2) {
+            if (!r2 || r2.c !== p.loc.c || r2.fuzzy || (r2.score || 0) < 0.95) return conv(r);
+            var o = conv(r2); if (o && o.prec) { o.fixed = fx.fix; o.why = ("תיקנו את שם הרחוב ל\u201D" + fx.fix + "\u201C. " + (o.why || "")).trim(); }
+            return o;
+          });
+        });
+      }
+      return conv(r);
+    })["catch"](function () { return null; });
+    function conv(r) {
+      var l = locByCode(r.c), base = { c: r.c, src: OFFSRC, off: true, score: r.score || 0, street: r.street };
+      function mk(lat, lon, prec, label, why, vc) { var o = { lat: lat, lon: lon, prec: prec, label: label, why: why || "", vc: !!vc }; for (var k in base) o[k] = base[k]; return o; }
+      if (r.prec === "settlement") {
+        if (!r.street) return { none: true, c: r.c };
+        var v = venuesOn(r.c, r.street);
+        if (v) return mk(v.lat, v.lon, "estreet", r.street + ", " + r.cname, "הרחוב " + r.street + " נמצא ברשימת הרחובות הרשמית, אבל לא מיקום הבית. הנקודה משוערת לפי הקלפיות שברחוב.", true);
+        return { nameOnly: r.street, c: r.c };
+      }
+      if (r.fuzzy || base.score < 0.8) return { none: true, c: r.c, alts: [r.street].concat(r.alts || []).filter(Boolean) };
+      if (r.prec === "neighborhood") return mk(r.lat, r.lon, "area", r.label);
+      if (r.prec === "street") return mk(r.lat, r.lon, p.num ? "estreet" : "street", r.label, p.num ? "מספר הבית " + p.num + " לא נמצא. המיקום משוער לפי הרחוב " + r.street + "." : "");
+      return mk(r.lat, r.lon, r.prec, r.label, r.prec === "interp" ? "המיקום משוער לפי מספרי הבתים הסמוכים ברחוב." : "");
+    }
+  }
+  // ---------- Street candidates of ONE locality (shared by the fuzzy fixer and the typeahead) ----------
+  // Folding: niqqud, finals, punctuation, doubled yod/vav (ktiv male/haser), lowercase. sk adds the vowel-less skeleton.
+  function acFold(s) { return fold(String(s || "").replace(/[\u0591-\u05C7]/g, "")).toLowerCase(); }
+  var STC = {};
+  function streetList(c) {
+    var g = geoIdx(); if (!g) return Promise.resolve([]);
+    if (STC[c]) return STC[c];
+    STC[c] = g.shard(c).then(function (d) {
+      var seen = {}, out = [];
+      d.streets.forEach(function (st) {
+        var nm = st.names[0]; if (!nm || /^\d+$/.test(nm)) return;
+        var heb = /[\u05D0-\u05EA]/.test(nm), key = acFold(nm).replace(/ (street|st|road|rd|avenue|ave|blvd|boulevard)$/, "");
+        if (seen[key]) { seen[key].n.push.apply(seen[key].n, st.names.slice(1)); return; }
+        var o = { name: nm, heb: heb, n: st.names.slice(1), f: key, sk: sskel(nm), geo: st.x != null };
+        seen[key] = o; out.push(o);
+      });
+      out.forEach(function (o) {
+        o.af = o.n.map(acFold).filter(function (x) { return x && x !== o.f; });
+        o.w = (" " + o.f + " " + o.af.join(" ")); // word-start search haystack
+      });
+      return out;
+    }, function () { delete STC[c]; return []; });
+    return STC[c];
+  }
+  function dlev(a, b, max) { // Damerau-Levenshtein (optimal string alignment) with an early exit
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    var d = [], i, j;
+    for (i = 0; i <= a.length; i++) d[i] = [i];
+    for (j = 0; j <= b.length; j++) d[0][j] = j;
+    for (i = 1; i <= a.length; i++) {
+      var mn = 1e9;
+      for (j = 1; j <= b.length; j++) {
+        d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+        if (d[i][j] < mn) mn = d[i][j];
+      }
+      if (mn > max) return max + 1;
+    }
+    return d[a.length][b.length];
+  }
+  function stripType(f) { return f.replace(/^(רחוב|רח|שדרות|שד|שדרת|דרך|סמטת|סמטה|כיכר|ככר|שביל|משעול|street|st|شارع) /, ""); }
+  // Fuzzy candidates in the locality's own streets: [{o, d, n}] best first. d = edit distance, n = d / length.
+  function fuzzyIn(list, q) {
+    var f = acFold(q), f2 = stripType(f), out = [], max = f.length >= 9 ? 2 : 1;
+    if (f.length < 3) return out;
+    list.forEach(function (o) {
+      var best = 99;
+      [o.f].concat(o.af).forEach(function (t) {
+        var d = Math.min(dlev(f, t, max), dlev(f2, stripType(t), max));
+        if (d < best) best = d;
+      });
+      if (best <= max) out.push({ o: o, d: best, n: best / Math.max(f.length, 1) });
+    });
+    return out.sort(function (a, b) { return a.d - b.d || (b.o.heb - a.o.heb) || (b.o.geo - a.o.geo) || a.o.f.length - b.o.f.length; });
+  }
+  // A typo is auto-corrected only when ONE street of that locality is the clear winner (no other at the same distance),
+  // the word is long enough for one edit (5+ letters) or two edits (9+), and the match is not exact already.
+  function scopedFuzzy(c, street) {
+    return streetList(c).then(function (list) {
+      var f = acFold(street); if (!f) return {};
+      if (list.some(function (o) { return o.f === f || o.sk === sskel(street); })) return {};
+      var h = fuzzyIn(list, street);
+      if (!h.length) return {};
+      var b = h[0], len = f.length, core = stripType(b.o.f);
+      // "ככר דיזנגוף" is the same name as "דיזנגוף" with a type word: not a rival candidate.
+      h = [b].concat(h.slice(1).filter(function (x) { return stripType(x.o.f) !== core; }));
+      var clear = (!h[1] || h[1].d > b.d) && b.d >= 1 && ((b.d === 1 && len >= 5) || (b.d === 2 && len >= 9));
+      return { fix: clear && b.o.heb ? b.o.name : null, alts: h.slice(0, 4).map(function (x) { return x.o.name; }) };
+    });
+  }
+
+  // ---------- Typeahead: an ARIA 1.2 combobox. Localities first; once a locality is known, its streets. ----------
+  var AC = { opts: [], act: -1, seq: 0, locs: null, stats: [] };
+  window.kalpiAcStats = AC.stats;
+  function acLocs() {
+    if (AC.locs) return AC.locs;
+    var L = localities(), out = [];
+    Object.keys(L).forEach(function (nm) { out.push({ l: L[nm], name: nm, w: " " + acFold(nm).replace(/-/g, " ") }); });
+    Object.keys(ALIASES).forEach(function (a) { var l = findLoc(ALIASES[a]); if (l) out.push({ l: l, name: l.name, w: " " + acFold(a), alias: a }); });
+    return (AC.locs = out);
+  }
+  function acRank(w, q) { // 0: starts with q, 1: a later word starts with q, 2: contains q, -1: no match
+    var i = w.indexOf(" " + q); if (i === 0) return 0; if (i > 0) return 1; return q.length >= 3 && w.indexOf(q) > 0 ? 2 : -1;
+  }
+  function acCompute(v) {
+    var n = normalize(v), p = parse(n), comma = /,/.test(v);
+    if (p.loc && p.street) return { mode: "street", p: p };
+    var tail = comma ? v.split(",").pop() : v, street = comma ? v.slice(0, v.lastIndexOf(",")).trim() : "";
+    var q = acFold(normalize(tail)).replace(/-/g, " ").trim();
+    if (q.length < 2) return { mode: "none" };
+    var seen = {}, hits = [];
+    acLocs().forEach(function (e) { var r = acRank(e.w, q); if (r >= 0) hits.push({ e: e, r: r }); });
+    hits.sort(function (a, b) { return a.r - b.r || b.e.l.k - a.e.l.k; });
+    var opts = [];
+    hits.forEach(function (h) {
+      if (seen[h.e.name] || opts.length >= 7) return; seen[h.e.name] = 1;
+      opts.push({ kind: "loc", text: h.e.name, sub: h.e.alias ? h.e.alias : "יישוב", street: normalize(street), l: h.e.l });
+    });
+    return { mode: "loc", opts: opts };
+  }
+  function acStreets(list, p) {
+    var q = acFold(p.street).replace(/-/g, " ").trim(), q2 = stripType(q), sk = sskel(p.street), hits = [];
+    if (!q) return [];
+    list.forEach(function (o) {
+      var r = acRank(o.w, q); if (r < 0 && q2 !== q) r = acRank(o.w, q2);
+      if (r < 0 && sk.length >= 3 && o.sk.indexOf(sk) === 0) r = 1.5; // ktiv male/haser: וייצמן = ויצמן
+      if (r >= 0) hits.push({ o: o, r: r });
+    });
+    if (hits.length < 3) fuzzyIn(list, p.street).slice(0, 4).forEach(function (h) { if (!hits.some(function (x) { return x.o === h.o; })) hits.push({ o: h.o, r: 3 + h.n, fz: true }); });
+    hits.sort(function (a, b) { return a.r - b.r || (b.o.heb - a.o.heb) || (b.o.geo - a.o.geo) || a.o.f.length - b.o.f.length; });
+    return hits.slice(0, 7).map(function (h) {
+      var alias = !h.o.heb ? "" : (acRank(" " + h.o.f, q) < 0 && h.o.n.filter(function (x) { return acRank(" " + acFold(x), q) >= 0; })[0]) || "";
+      return { kind: "street", text: h.o.name + (p.num ? " " + p.num : "") + ", " + p.loc.name, name: h.o.name, sub: h.fz ? "האם התכוונתם?" : alias, num: p.num, l: p.loc };
+    });
+  }
+  function acRender(opts) {
+    var ul = $("qList"), inp = $("q");
+    AC.opts = opts; AC.act = -1;
+    if (!opts.length) { ul.hidden = true; ul.innerHTML = ""; inp.setAttribute("aria-expanded", "false"); inp.removeAttribute("aria-activedescendant"); return; }
+    ul.innerHTML = opts.map(function (o, i) {
+      return '<li role="option" id="qo' + i + '" aria-selected="false" class="ac-' + o.kind + '"><bdi>' + esc(o.text) + "</bdi>" + (o.sub ? '<span class="ac-sub">' + esc(o.sub) + "</span>" : "") + "</li>";
+    }).join("");
+    ul.hidden = false; inp.setAttribute("aria-expanded", "true");
+  }
+  function acSet(i) {
+    var inp = $("q"), lis = $("qList").children;
+    if (AC.act >= 0 && lis[AC.act]) lis[AC.act].setAttribute("aria-selected", "false");
+    AC.act = i;
+    if (i >= 0 && lis[i]) { lis[i].setAttribute("aria-selected", "true"); inp.setAttribute("aria-activedescendant", "qo" + i); lis[i].scrollIntoView({ block: "nearest" }); }
+    else inp.removeAttribute("aria-activedescendant");
+  }
+  function acClose() { acRender([]); AC.seq++; }
+  function acChoose(o) {
+    var inp = $("q");
+    acClose();
+    if (o.kind === "loc") {
+      if (!o.street) { inp.value = o.text; return search(); }
+      inp.value = o.street + ", " + o.text;
+      if (/\d/.test(o.street)) return search();
+      inp.focus(); inp.setSelectionRange(o.street.length, o.street.length); return acUpdate();
+    }
+    if (o.num) { inp.value = o.text; return search(); }
+    // No house number yet: put the caret after the street name, ready for the number.
+    inp.value = o.name + " , " + o.l.name; inp.focus(); inp.setSelectionRange(o.name.length + 1, o.name.length + 1);
+  }
+  function acUpdate() {
+    if (!D) return;
+    var v = $("q").value, seq = ++AC.seq, t0 = performance.now(), r = acCompute(v);
+    if (r.mode === "none") { AC.stats.push(performance.now() - t0); return acRender([]); }
+    if (r.mode === "loc") { acRender(r.opts); AC.stats.push(performance.now() - t0); return; }
+    var c = r.p.loc.c;
+    if (STC[c] && STC[c].v) { acRender(acStreets(STC[c].v, r.p)); AC.stats.push(performance.now() - t0); return; }
+    streetList(c).then(function (list) {
+      STC[c].v = list;
+      if (seq !== AC.seq) return;
+      var t1 = performance.now(); acRender(acStreets(list, r.p)); AC.stats.push(performance.now() - t1);
+    });
+  }
+  function acInit() {
+    var inp = $("q"), ul = document.createElement("ul");
+    ul.id = "qList"; ul.className = "aclist"; ul.setAttribute("role", "listbox"); ul.setAttribute("aria-label", "הצעות"); ul.hidden = true;
+    inp.parentNode.appendChild(ul);
+    inp.setAttribute("role", "combobox"); inp.setAttribute("aria-autocomplete", "list"); inp.setAttribute("aria-expanded", "false");
+    inp.setAttribute("aria-controls", "qList"); inp.setAttribute("autocomplete", "off");
+    inp.addEventListener("input", acUpdate);
+    inp.addEventListener("keydown", function (e) {
+      var n = AC.opts.length;
+      if (e.key === "ArrowDown") { if (!n) { acUpdate(); return; } e.preventDefault(); acSet((AC.act + 1) % n); }
+      else if (e.key === "ArrowUp" && n) { e.preventDefault(); acSet(AC.act <= 0 ? n - 1 : AC.act - 1); }
+      else if (e.key === "Enter" && n && AC.act >= 0) { e.preventDefault(); acChoose(AC.opts[AC.act]); }
+      else if (e.key === "Escape" && n) { e.preventDefault(); e.stopPropagation(); acClose(); }
+      else if (e.key === "Tab") acClose();
+    });
+    ul.addEventListener("mousedown", function (e) { e.preventDefault(); });
+    ul.addEventListener("click", function (e) { var li = e.target.closest("li"); if (li) acChoose(AC.opts[+li.id.slice(2)]); });
+    inp.addEventListener("blur", function () { setTimeout(acClose, 100); });
+    $("searchForm").addEventListener("submit", acClose, true);
+  }
+  function lev(a, b) {
+    var m = a.length, n = b.length, d = [], i, j; for (i = 0; i <= m; i++) d[i] = [i]; for (j = 0; j <= n; j++) d[0][j] = j;
+    for (i = 1; i <= m; i++) for (j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    return d[m][n];
+  }
+  // "Did you mean" streets of that locality (from the offline index) for a street that is not there.
+  function streetSuggest(p, sid) {
+    var g = geoIdx(); if (!g || !p.loc) return;
+    g.shard(p.loc.c).then(function (d) {
+      if (sid !== searchId) return;
+      var q = sskel(p.street.replace(/^שדרות\s+/, "")), seen = {}, hits = [];
+      if (q.length < 2) return;
+      d.streets.forEach(function (s) {
+        var nm = s.names[0]; if (!nm || /^\d+$/.test(nm) || seen[nm]) return; seen[nm] = 1;
+        var k = sskel(nm), sc = lev(k, q);
+        plain(nm).split(" ").forEach(function (w) { var kw = sskel(w); if (kw.length >= 3 && q.length >= 3 && kw.slice(0, 3) === q.slice(0, 3)) sc = Math.min(sc, 1.5 + Math.abs(kw.length - q.length) / 4); if (kw && lev(kw, q) <= 1) sc = Math.min(sc, 1); });
+        if (sc <= 2) hits.push([sc, nm]);
+      });
+      hits.sort(function (a, b) { return a[0] - b[0]; });
+      hits = hits.slice(0, 4).map(function (h) { return h[1]; });
+      if (!hits.length) return;
+      var el = $("alts");
+      el.innerHTML = '<span class="alts-q">רחובות דומים ב' + esc(p.loc.name) + ":</span>" + hits.map(function (nm) {
+        var qq = nm + (p.num ? " " + p.num : "") + ", " + p.loc.name; return '<button type="button" data-q="' + esc(qq) + '">' + esc(nm) + "</button>";
+      }).join("");
+      Array.prototype.forEach.call(el.querySelectorAll("button"), function (b) { b.addEventListener("click", function () { $("q").value = b.getAttribute("data-q"); search(); }); });
+    });
+  }
   function search(fromUrl) {
     var q = $("q").value.trim();
+    window.kalpiBusy = false;
     $("alts").innerHTML = "";
-    if (!q) { status('<p class="hint-msg" role="status">הקלידו כתובת: רחוב, מספר ויישוב. למשל: הרצל 1, חולון</p>', true); $("q").focus(); return; }
+    if (!q) { status('<p class="hint-msg" role="status">הקלידו כתובת: רחוב, מספר ויישוב. למשל: הרצל 1, ראשון לציון</p>', true); $("q").focus(); return; }
     if (!D) { pending = true; status('<p class="hint-msg" role="status">טוענים את נתוני הקלפיות… החיפוש יתחיל מיד בסיום הטעינה.</p>', true); return; }
     if (fromUrl !== true) setUrl({ q: q }, true);
     $("clearQ").hidden = false;
@@ -977,6 +1260,7 @@
     var free = p.loc && p.city ? (p.street + (p.num ? " " + p.num : "") + ", " + p.city).replace(/^,\s*/, "") : n;
     // A bare settlement name: use that settlement's polling places from the data.
     if (!p.street && p.loc) return settlement(p.loc, "");
+    var off = null;
     var steps = [function () { return cec(p.loc && p.city ? free.replace(/,/g, " ") : n, p); },
       function () { return nom("q=" + encodeURIComponent(free), p, "חיפוש חופשי"); }];
     if (p.city) steps.push(function () {
@@ -1002,32 +1286,78 @@
     }
     var tmr = setTimeout(function () { shown = true; draw(); }, 600);
     function done() { clearTimeout(tmr); }
-    var best = null, failed = 0, i = 0;
-    (function next() {
+    var best = null, failed = 0, i = 0, bg = false;
+    window.kalpiBusy = true;
+    function idle() { if (id === searchId) window.kalpiBusy = false; }
+    offline(n, p).then(function (o) {
+      if (id !== searchId) return;
+      off = o;
+      // Offline first: a confident hit from the site's own index is shown at once, with no third-party call.
+      // House numbers (and queries without one) are final; an interpolated or street-level point is refined
+      // in the background and replaced only if an online geocoder finds the exact house in the same locality.
+      if (o && o.prec && !o.vc && o.score >= 0.85 && (o.prec !== "area" || !p.num)) {
+        done(); show(o);
+        if (o.prec === "house" || !p.num) return idle();
+        bg = true;
+      }
+      // Neither the offline index (OSM + the official street list) knows this street: ask only the CEC
+      // (which mirrors the official addresses) and then say plainly that the street was not found.
+      if (o && o.none && p.loc && !/[A-Za-z\u0600-\u06FF]/.test(p.street)) steps.length = 1;
+      next();
+    });
+    function next() {
       if (id !== searchId) return;
       if (i >= steps.length) {
-        done();
-        if (best) return show(best);
-        if (p.loc) return settlement(p.loc, failed === steps.length ? "שירותי איתור הכתובות לא זמינים כרגע." : "", true);
-        return localSearch(q, failed === steps.length);
+        done(); idle();
+        if (bg) return;
+        var down = failed === steps.length;
+        var pick = best;
+        if (off && off.prec && (!pick || RANKP[off.prec] > (RANKP[pick.prec] || 0))) pick = off;
+        if (pick) { if (down && pick.off) pick.why = ("שירותי איתור הכתובות לא זמינים כרגע; התוצאה מהאינדקס של האתר. " + (pick.why || "")).trim(); return show(pick); }
+        if (p.loc && p.street) return noStreet(down);
+        if (p.loc) return settlement(p.loc, down ? "שירותי איתור הכתובות לא זמינים כרגע." : "", true);
+        return localSearch(q, down);
       }
       if (i && kinds[i] !== kinds[i - 1] && stt[kinds[i - 1]] === "act") stt[kinds[i - 1]] = "no";
-      stt[kinds[i]] = "act"; draw();
+      stt[kinds[i]] = "act"; if (!bg) draw();
       steps[i++]().then(function (r) {
         if (id !== searchId) return;
-        if (r && (r.prec === "house" || !p.num)) return show(r);
-        if (r && !best) best = r;
+        // Never show a point in another locality than the one typed (Photon's "הדר" in חוף הכרמל for חיפה).
+        if (r && p.loc && (r.c ? r.c !== p.loc.c : !inLocBox(r, p.loc, 0.03))) r = null;
+        if (bg) { if (r && r.prec === "house") { idle(); return show(r); } return next(); }
+        if (r && (r.prec === "house" || !p.num)) {
+          idle();
+          // Without a number, a street/neighborhood from the offline index beats an online "area" (a POI or region).
+          if (r.prec === "area" && off && off.prec && RANKP[off.prec] > RANKP.area && off.prec !== "estreet") return show(off);
+          return show(r);
+        }
+        if (r && (!best || RANKP[r.prec] > RANKP[best.prec])) best = r;
         next();
       }, function () { failed++; next(); });
-    })();
+    }
+    // Typed a street that no geocoder found. If the official street list of the locality (data.gov.il 321) and the
+    // offline index both lack it, say so plainly and offer similar streets; otherwise it is a real street we could not place.
+    function noStreet(down) {
+      var sid = id;
+      officialStreets(p.loc.c).then(function (set) {
+        if (sid !== searchId) return;
+        var st = sskel(p.street.replace(/^שדרות\s+/, "")), listed = !!(set && (set[st] || set[sskel(p.street)]));
+        if (off && off.nameOnly) listed = true;
+        if (!listed && (set || (off && off.none))) {
+          settlement(p.loc, "לא נמצא רחוב בשם \u201D" + p.street + "\u201C ב" + p.loc.name + " לפי רשימת הרחובות הרשמית. מוצגות קלפיות סמוך למרכז היישוב. כדאי לבדוק את שם הרחוב ואת היישוב.");
+          return streetSuggest(p, sid);
+        }
+        settlement(p.loc, (down ? "שירותי איתור הכתובות לא זמינים כרגע. " : "") + (listed ? "הרחוב " + ((off && off.nameOnly) || p.street) + " קיים ב" + p.loc.name + ", אבל מיקומו לא ידוע לנו. מוצגות קלפיות סמוך למרכז היישוב." : ""), !listed);
+      });
+    }
     function show(r) {
       if (id !== searchId) return;
       done();
       var c = r.c || null;
-      // Scope to the typed locality only when the point is actually inside it (with ~5 km of slack).
-      if (!c && p.loc && r.lat >= p.loc.s - .05 && r.lat <= p.loc.nn + .05 && r.lon >= p.loc.w - .05 && r.lon <= p.loc.e + .05) c = p.loc.c;
+      // Scope to the typed locality only when the point is actually inside it (with ~3 km of slack).
+      if (!c && p.loc && inLocBox(r, p.loc, 0.03)) c = p.loc.c;
       status("");
-      locate(r.lat, r.lon, r.label, r.prec, { c: c, nb: r.nb, src: r.src });
+      locate(r.lat, r.lon, r.label, r.prec, { c: c, nb: r.nb, src: r.src, why: r.why || "" });
     }
   }
   // Settlement fallback. notFound: the street was typed but not found (yellow banner per brief §3.6).
@@ -1087,6 +1417,7 @@
     b.addEventListener("click", function () { $("q").value = b.getAttribute("data-q"); search(); });
   });
   $("q").addEventListener("input", function () { $("clearQ").hidden = !$("q").value; });
+  acInit();
   $("clearQ").addEventListener("click", function () { $("q").value = ""; $("clearQ").hidden = true; ++searchId; status(""); clearResult(); renderEmpty(); setUrl({}, true); $("q").focus(); });
   function clearResult() {
     if (marker) { marker.remove(); marker = null; } if (layerNear) { layerNear.remove(); layerNear = null; }

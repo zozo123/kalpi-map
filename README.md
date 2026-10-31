@@ -38,7 +38,8 @@
 - אזורים סטטיסטיים 2022 ומדד חברתי-כלכלי 2021: [הלמ"ס](https://www.cbs.gov.il/he/Pages/geo-layers.aspx) (רישיון פתוח, גבולות מפושטים). בכ-22% מהאזורים המיושבים אין קלפי.
 - שיוך קלפיות ל-2022/2021: harelc/elections-vote-transfer.
 - שמות הרשימות: [רשימות המועמדים לכנסת ה-26](https://www.gov.il/he/pages/candidates-lists-26), ועדת הבחירות המרכזית.
-- מפה © תורמי OpenStreetMap, Leaflet. צבעי הרשימות בהשראת [RavBogard/israelielection](https://github.com/RavBogard/israelielection).
+- מפה © תורמי OpenStreetMap, Leaflet.
+- אינדקס הרחובות המקומי (`geo/`, `kalpi-geocode.js`): © OpenStreetMap contributors (ODbL), data.gov.il (מאגר 321), Tel Aviv-Yafo GIS, CEC. צבעי הרשימות בהשראת [RavBogard/israelielection](https://github.com/RavBogard/israelielection).
 
 אתר עצמאי ולא רשמי.
 
