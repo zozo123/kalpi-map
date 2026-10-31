@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>איפה הצביעו לידי? קלפיות ותוצאות – הבחירות לכנסת ה-26</title>
+<meta name="description" content="הקלידו כתובת בישראל וקבלו את הקלפיות הקרובות ואת תוצאות ההצבעה בכל קלפי בבחירות לכנסת ה-26 (27.10.2026).">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>קלפיות ותוצאות לפי כתובת</h1>
+  <p class="sub">הבחירות לכנסת ה-26, 27 באוקטובר 2026. הקלידו כתובת וקבלו את 5 מקומות הקלפי הקרובים ואיך הצביעו בכל קלפי.</p>
+</header>
+
+<main>
+  <section class="search" aria-label="חיפוש כתובת">
+    <div class="row">
+      <input id="q" type="search" placeholder="למשל: דיזנגוף 100, תל אביב" autocomplete="street-address" aria-label="כתובת">
+      <button id="go" class="primary">חיפוש</button>
+      <button id="loc" title="השתמשו במיקום הנוכחי שלכם">המיקום שלי</button>
+    </div>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+    <div id="alts" class="alts"></div>
+  </section>
+
+  <div class="layout">
+    <div id="map" aria-label="מפה"></div>
+    <section id="results" aria-label="תוצאות"></section>
+  </div>
+
+  <section class="notes">
+    <h2>חשוב לדעת</h2>
+    <ul>
+      <li>ההצבעה חשאית: התוצאות הן ברמת הקלפי בלבד ואינן מלמדות על אדם מסוים או על בניין מגורים מסוים.</li>
+      <li>כל בוחר משובץ לקלפי לפי הכתובת הרשומה שלו במרשם האוכלוסין, לא לפי קרבה. "הקלפי הקרובה" היא הערכה בלבד. את הקלפי המדויקת שלכם בודקים באתר הרשמי לפי מספר תעודת זהות: <a href="https://www.gov.il/apps/moin/bocharim/" target="_blank" rel="noopener">gov.il/apps/moin/bocharim</a>.</li>
+      <li>קולות המעטפות הכפולות (חיילים, נציגויות, אסירים, מאושפזים ועוד) אינם משויכים למקום ולכן אינם מוצגים.</li>
+      <li>אחוז ההצבעה = מצביעים חלקי בעלי זכות בחירה בקלפי. חלוקת הקולות מחושבת מתוך הקולות הכשרים. רשימות מתחת ל-1% בקלפי מקובצות ב"אחרות".</li>
+      <li>המרחק נמדד בקו אוויר מהנקודה שנמצאה. איתור הכתובת נעשה ב-OpenStreetMap ועלול לטעות; אפשר ללחוץ על המפה כדי להזיז את הנקודה.</li>
+      <li id="ver"></li>
+    </ul>
+    <h2>מקורות</h2>
+    <ul>
+      <li>תוצאות לפי קלפי: ועדת הבחירות המרכזית לכנסת ה-26 (קובץ <code>expb.csv</code>), דרך העותק המתעדכן של <a href="https://github.com/harelc/elections-vote-transfer" target="_blank" rel="noopener">harelc/elections-vote-transfer</a> (רישיון CC BY-NC-SA 4.0), והצלבה מול העותק ב-<a href="https://github.com/shaielc/Behirot" target="_blank" rel="noopener">shaielc/Behirot</a>.</li>
+      <li>מקומות הקלפי וקואורדינטות: שכבה 243675 של <a href="https://www.govmap.gov.il/?lay=243675" target="_blank" rel="noopener">GovMap</a> / ועדת הבחירות המרכזית, דרך הקובץ <code>polling_places.csv</code> של shaielc/Behirot.</li>
+      <li>שמות הרשימות ואותיות הפתק: <a href="https://www.gov.il/he/pages/candidates-lists-26" target="_blank" rel="noopener">רשימות המועמדים לכנסת ה-26</a>, ועדת הבחירות המרכזית.</li>
+      <li>מפה: © תורמי <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>. איתור כתובות: <a href="https://nominatim.org/" target="_blank" rel="noopener">Nominatim</a>. ספריית מפות: Leaflet.</li>
+      <li>אתר עצמאי, לא רשמי, ללא קשר לוועדת הבחירות. קוד ושיטה: <a href="https://github.com/zozo123/kalpi-map" target="_blank" rel="noopener">GitHub</a>.</li>
+    </ul>
+  </section>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="app.js"></script>
+</body>
+</html>
