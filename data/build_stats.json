@@ -2,7 +2,7 @@
  "polling_places": 12018,
  "result_rows": 12926,
  "joined_kalpiot": 12018,
- "buildings": 4266,
+ "buildings": 4399,
  "unmatched_places": [],
  "result_rows_without_location (double envelopes etc.)": 908,
  "unknown_party_codes": [],
@@ -10,7 +10,7 @@
  "expb_rows_differing_from_latest": 49,
  "eligible": 7331981,
  "voters": 5716673,
- "json_bytes": 1557319,
+ "json_bytes": 1572382,
  "source_status": {
   "kind": "official",
   "as_of": "2026-10-31T10:27:49.247883+00:00",

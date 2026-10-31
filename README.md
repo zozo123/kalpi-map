@@ -22,6 +22,7 @@
 - כל בוחר משובץ לפי הכתובת הרשומה במרשם האוכלוסין, לא לפי קרבה. "הקלפי הקרובה" היא הערכה. את הקלפי שלכם בודקים ב-https://www.gov.il/apps/moin/bocharim/
 - קולות המעטפות הכפולות (908 "קלפיות" ללא מיקום) אינם מוצגים.
 - גרסת הנתונים: תמונת מצב רשמית של ועדת הבחירות המרכזית מ-31.10.2026 12:27 שעון ישראל (`as_of` 2026-10-31T10:27:49Z, כפי שנשמרה ב-harelc בקומיט `6b7f321`). כל 12,018 הקלפיות הרגילות נספרו וכל 908 קלפיות המעטפות החיצוניות נקלטו. ייתכנו הבדלים קטנים מהפרסום הסופי הרשמי.
+- החיבור נבדק מול חיבור עצמאי (kalpiot26.json של בודק נפרד): כל 12,018 הקלפיות זהות במספר קלפי (כמחרוזת, "x.10" שונה מ-"x.1"), בעלי זכות, מצביעים, כשרים, קולות לכל רשימה, יישוב, מקום וכתובת. An independent join was cross-checked: all 12,018 kalpiot are identical.
 - מיפוי אותיות הרשימות (38 אותיות) אומת מול פתקי ההצבעה המאושרים של ועדת הבחירות (Approved Voting Slips). הצבעים לפי הפלטה של RavBogard/israelielection.
 - Data version: official CEC snapshot as of 2026-10-31 12:27 Israel time (10:27:49 UTC), via harelc commit `6b7f321`; all 12,018 regular boxes and 908 external-envelope boxes counted. Small differences from the final official publication are possible. The CEC's own media26 expb.csv blocks automated downloads, so it is not fetched directly.
 - Nominatim לא תמיד מכיר מספרי בית בישראל; במקרה כזה מוצג הרחוב, וזה מופיע בשורת הסטטוס.

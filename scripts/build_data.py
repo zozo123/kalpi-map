@@ -281,7 +281,7 @@ def main():
         if r is None:
             unmatched.append(bid); continue
         lat, lon = round(float(p["קו רוחב"]), 5), round(float(p["קו אורך"]), 5)
-        key = (lat, lon)
+        key = (lat, lon, clean(p["שם ישוב בחירות"]), clean(p["מקום קלפי"]), clean(p["כתובת קלפי"]))  # one point can host several venues/localities
         b = buildings.get(key)
         if b is None:
             b = buildings[key] = {"y": lat, "x": lon, "t": clean(p["שם ישוב בחירות"]),

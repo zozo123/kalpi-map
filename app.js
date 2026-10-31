@@ -35,8 +35,8 @@
     map.on("zoomend", toggleAll); toggleAll();
     var asOf = d.source_as_of ? new Date(d.source_as_of).toLocaleString("he-IL", { timeZone: "Asia/Jerusalem", dateStyle: "short", timeStyle: "short" }) : "?";
     var nk = d.b.reduce(function (s, b) { return s + b.k.length; }, 0);
-    var ver = "גרסת הנתונים: ספירה רשמית של ועדת הבחירות המרכזית, תמונת מצב מ-" + asOf + " (שעון ישראל), " +
-      fmt(nk) + " קלפיות ב-" + fmt(d.b.length) + " מקומות. ייתכנו הבדלים קטנים מהפרסום הסופי הרשמי.";
+    var ver = "תוצאות סופיות, נתונים נכונים ל-31 באוקטובר 2026 (תמונת מצב " + asOf + " שעון ישראל). מקור: ועדת הבחירות המרכזית דרך harelc/elections-vote-transfer. " +
+      fmt(nk) + " קלפיות ב-" + fmt(d.b.length) + " מקומות.";
     $("ver").textContent = ver; $("dataver").textContent = ver;
     status("");
     var q = new URLSearchParams(location.search).get("q");
