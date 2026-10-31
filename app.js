@@ -23,6 +23,7 @@
   status("טוען נתונים…");
   fetch("data/kalpiot26.json").then(function (r) { return r.json(); }).then(function (d) {
     D = d; P = d.parties;
+    setTimeout(layerSelect, 0);
     P.forEach(function (p) { COLORS[p[0]] = p[4]; });
     d.b.forEach(function (b) { b.agg = aggregate(b.k); });
     allLayer = L.layerGroup(d.b.map(function (b) {
@@ -93,41 +94,223 @@
   }
   function fmtDist(m) { return m < 1000 ? Math.round(m / 10) * 10 + " מ'" : (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' ק"מ'; }
 
-  function locate(lat, lon, label, prec) {
+  // ctx.c: CBS/CEC locality code of the geocoded address -> only that locality's polling places are candidates
+  // (residents vote in their own locality). ctx.nb: CEC neighborhood id, known when the user searched a neighborhood.
+  function locate(lat, lon, label, prec, ctx) {
     if (!D) return;
-    var near = D.b.map(function (b) { return { b: b, d: dist(lat, lon, b.y, b.x) }; })
-      .sort(function (a, b) { return a.d - b.d; }).slice(0, NEAREST);
+    ctx = ctx || {};
+    if (ctx.nb && !N && !ctx.waited) { ctx.waited = 1; return extras().then(function () { locate(lat, lon, label, prec, ctx); }); }
+    var all = D.b.map(function (b) { return { b: b, d: dist(lat, lon, b.y, b.x) }; }).sort(function (a, b) { return a.d - b.d; });
+    var near = all, scope = "all";
+    if (ctx.c && D.b.some(function (b) { return b.c === ctx.c; })) {
+      var inLoc = all.filter(function (n) { return n.b.c === ctx.c; });
+      var nbid = ctx.nb && N ? N.h[ctx.nb] : null;
+      if (nbid != null) {
+        var inNb = inLoc.filter(function (n) { return nbOf(n.b) === nbid; });
+        if (inNb.length) { inLoc = inNb.concat(inLoc.filter(function (n) { return nbOf(n.b) !== nbid; })); scope = "nb"; }
+      }
+      if (scope !== "nb") scope = "loc";
+      near = inLoc.length >= NEAREST ? inLoc : inLoc.concat(all.filter(function (n) { return n.b.c !== ctx.c; }).map(function (n) { n.out = true; return n; }));
+    }
+    near = near.slice(0, NEAREST);
+    lastCtx = { c: ctx.c, nb: ctx.nb && N ? N.h[ctx.nb] : null, scope: scope };
     if (marker) marker.remove();
     marker = L.marker([lat, lon], { title: label, draggable: true }).addTo(map).bindTooltip(label);
-    marker.on("dragend", function () { var ll = marker.getLatLng(); status("נקודה שנבחרה במפה."); locate(ll.lat, ll.lng, "נקודה שנבחרה במפה", "manual"); });
+    marker.on("dragend", function () { var ll = marker.getLatLng(); status("נקודה שנבחרה במפה."); locate(ll.lat, ll.lng, "נקודה שנבחרה במפה", "manual", { c: ctx.c }); });
     if (layerNear) layerNear.remove();
     layerNear = L.layerGroup(near.map(function (n, i) {
       return L.marker([n.b.y, n.b.x], { icon: L.divIcon({ className: "", html: '<span class="card-num" style="display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;border-radius:50%;background:#1f5fbf;color:#fff;font-weight:700;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)">' + (i + 1) + "</span>", iconSize: [24, 24], iconAnchor: [12, 12] }) })
         .bindPopup(popupHtml(n.b));
     })).addTo(map);
     map.fitBounds(L.latLngBounds([[lat, lon]].concat(near.map(function (n) { return [n.b.y, n.b.x]; }))).pad(0.2));
+    lastNear = near; lastLabel = label;
     render(near, label);
+    extras().then(function () { if (lastNear === near) render(near, label); });
     // Exposed for automated tests (no network side effects)
-    window.kalpiLast = { lat: lat, lon: lon, prec: prec || "manual", barzel: [].concat.apply([], near.map(function (n) { return n.b.k.map(function (k) { return k[0]; }); })) };
+    window.kalpiLast = { lat: lat, lon: lon, prec: prec || "manual", barzel: [].concat.apply([], near.map(function (n) { return n.b.k.map(function (k) { return k[0]; }); })), c: ctx.c || null, scope: scope };
   }
 
   function render(near, label) {
-    var h = '<div class="meta" style="margin-bottom:8px">5 מקומות הקלפי הקרובים אל: ' + esc(label) + "</div>";
+    var sc = lastCtx.scope === "nb" ? " (קודם כול בשכונה שחיפשתם, אחר כך ביישוב)" : lastCtx.scope === "loc" ? " ביישוב של הכתובת" : "";
+    var h = '<div class="meta" style="margin-bottom:8px">5 מקומות הקלפי הקרובים' + sc + " אל: " + esc(label) + "</div>" + nbHtml(near) + saHtml(near);
     near.forEach(function (n, i) {
       var b = n.b, a = b.agg;
       h += '<article class="card"><h3><span class="num">' + (i + 1) + "</span>" + esc(b.v) + "</h3>" +
-        '<div class="meta">' + esc(b.a) + ", " + esc(b.t) + " · " + fmtDist(n.d) + " · " +
+        '<div class="meta">' + esc(b.a) + ", " + esc(b.t) + " · " + fmtDist(n.d) + (n.out ? " · מחוץ ליישוב" : "") + (N && lastNb && nbOf(b) === lastNb ? " · באותה שכונה" : "") + " · " +
         (b.k.length === 1 ? "קלפי " + esc(b.k[0][1]) : b.k.length + " קלפיות (" + b.k.map(function (k) { return esc(k[1]); }).join(", ") + ")") + "</div>" +
-        statsHtml(a) + (b.k.length > 1 ? '<div class="meta">סך הכול במקום:</div>' : "") + barsHtml(a);
+        statsHtml(a) + (b.k.length > 1 ? '<div class="meta">סך הכול במקום:</div>' : "") + barsHtml(a) + histHtml(b.k, a);
       if (b.k.length > 1) {
         h += "<details><summary>תוצאות לכל קלפי בנפרד</summary>" + b.k.map(function (k) {
           var ka = aggregate([k]);
-          return '<div class="kalpi"><div class="kh">קלפי ' + esc(k[1]) + (k[5] ? " · נגישה" : "") + "</div>" + statsHtml(ka) + barsHtml(ka) + "</div>";
+          return '<div class="kalpi"><div class="kh">קלפי ' + esc(k[1]) + (k[5] ? " · נגישה" : "") + "</div>" + statsHtml(ka) + barsHtml(ka) + (b.k.length > 1 ? histHtml([k], ka) : "") + "</div>";
         }).join("") + "</details>";
       }
       h += "</article>";
     });
     $("results").innerHTML = h;
+  }
+
+  // ---------- v2: history (K25/K24) and statistical areas, lazy-loaded ----------
+  var H = null, S = null, N = null, extrasP = null, lastNear = null, lastLabel = "", lastCtx = {}, lastNb = null;
+  function extras() {
+    if (!extrasP) extrasP = Promise.all([
+      fetch("data/hist.json").then(function (r) { return r.json(); }),
+      fetch("data/sa.json").then(function (r) { return r.json(); }),
+      fetch("data/nb.json").then(function (r) { return r.json(); })
+    ]).then(function (a) { H = a[0]; S = a[1]; N = a[2]; }).catch(function () { extrasP = null; });
+    return extrasP;
+  }
+  // ---- CEC neighborhoods (polygons = the kalpiot whose polling location lies inside; K26 recomputed from our data) ----
+  function nbOf(b) { if (!N) return null; for (var i = 0; i < b.k.length; i++) { var u = N.k[b.k[i][0]]; if (u) return u; } return null; }
+  function nbShares(r, col, plist) { // shares by party he name for one election column of a neighborhood row
+    var valid = r[col], vec = r[col + 1], sh = {}; if (!valid) return null;
+    for (var i = 0; i < vec.length; i += 2) { var nm = pname(plist ? plist[vec[i]][1] : P[vec[i]][1]); sh[nm] = (sh[nm] || 0) + vec[i + 1] / valid; }
+    return sh;
+  }
+  function nbHtml(near) {
+    lastNb = null;
+    if (!N || !near.length) return "";
+    var u = lastCtx.nb != null && N.n[lastCtx.nb] ? lastCtx.nb : null, how = "השכונה שחיפשתם";
+    if (!u) { for (var i = 0; i < near.length && !u; i++) if (!near[i].out) u = nbOf(near[i].b); how = "לפי הקלפי הקרובה ביישוב"; }
+    var r = u && N.n[u]; if (!r) return "";
+    lastNb = +u;
+    var now = nbShares(r, 3), s25 = nbShares(r, 5, N.p25), s24 = nbShares(r, 7, N.p24);
+    var n25 = N.p25.reduce(function (o, p) { o[pname(p[1])] = 1; return o; }, {}), n24 = N.p24.reduce(function (o, p) { o[pname(p[1])] = 1; return o; }, {});
+    var names = Object.keys(now || {}).filter(function (n) { return now[n] >= 0.02; }).sort(function (a, b) { return now[b] - now[a]; }).slice(0, 8);
+    var code = {}; P.forEach(function (p) { code[pname(p[1])] = p[0]; });
+    function cell(sh, nm, n) { if (!sh) return "<td>—</td>"; if (!nm[n]) return '<td class="na" title="לא התמודדה בשם זה">—</td>'; return "<td>" + pct(sh[n] || 0) + "</td>"; }
+    var t = now ? '<table class="cmp"><thead><tr><th>רשימה</th><th>2026</th><th>2022</th><th>שינוי</th><th>2021</th></tr></thead><tbody>' + names.map(function (n) {
+      var d = s25 && n25[n] ? ((now[n] - (s25[n] || 0)) * 100) : null;
+      return '<tr><td><span class="sw" style="background:' + color(code[n]) + '"></span>' + esc(n) + "</td><td>" + pct(now[n]) + "</td>" + cell(s25, n25, n) +
+        '<td class="d">' + (d === null ? "" : (d > 0 ? "+" : "") + d.toFixed(1)) + "</td>" + cell(s24, n24, n) + "</tr>";
+    }).join("") + "</tbody></table>" : '<div class="meta">אין קלפי של 2026 בשכונה זו.</div>';
+    return '<div class="card sa nb"><h3>השכונה: ' + esc(r[2]) + ", " + esc(r[1]) + '</h3><div class="meta">' + how + " · " + fmt(r[3]) + " קולות כשרים ב-2026 · שכונות ועדת הבחירות</div>" + t +
+      '<div class="meta">אחוזים בלבד. 2022/2021 מקבצי השכונות של ועדת הבחירות לאותה שכונה; "—" = לא התמודדה באותו שם. השכונה נקבעת לפי מיקום הקלפיות, לא לפי מקום המגורים.</div></div>';
+  }
+  function pname(n) { return n.replace(/\s*\(לא התמודדה\)$/, ""); }
+  var YEARS = [["25", "2022"], ["24", "2021"]];
+  var QUAL = ["התאמה מדויקת לקלפי של 2022", "התאמה לפי מקום הקלפי", "משוערת: לפי מקום הקלפי הקרוב ב-2022", "קלפי או יישוב חדשים: אין נתונים קודמים"];
+  // Shares for one past election over a set of K26 kalpiot. Groups that repeat a building/locality sum are counted once.
+  function past(ks, y) {
+    var E = H[y], gs = {}, q = 0, kinds = {}, col = y === "25" ? 0 : 2, missing = 0;
+    ks.forEach(function (k) {
+      var e = H.k[k[0]];
+      if (!e || e[col] < 0) { missing++; return; }
+      gs[e[col]] = 1; q = Math.max(q, e[col + 1]); kinds[E.groups[e[col]][0] ? 1 : 0] = 1;
+    });
+    var gl = Object.keys(gs);
+    if (!gl.length) return { q: 3 };
+    if ((kinds[0] && kinds[1]) || missing) q = Math.max(q, 2);
+    var valid = 0, by = {};
+    gl.forEach(function (g) {
+      var G = E.groups[g]; if (G[0] === 2) q = Math.max(q, 2);
+      valid += G[1];
+      for (var i = 0; i < G[2].length; i += 2) { var nm = E.parties[G[2][i]][1]; by[nm] = (by[nm] || 0) + G[2][i + 1]; }
+    });
+    var sh = {}; Object.keys(by).forEach(function (n) { sh[n] = by[n] / valid; });
+    return { q: q, sh: sh, names: E.names || (E.names = E.parties.reduce(function (o, p) { o[p[1]] = 1; return o; }, {})) };
+  }
+  function histHtml(ks, a) {
+    if (!H) return '<div class="meta hist-wait">טוען השוואה לבחירות קודמות…</div>';
+    var now = {}; a.parties.forEach(function (p) { now[pname(p.name)] = { s: p.v / a.valid, code: p.code }; });
+    var ys = YEARS.map(function (y) { return past(ks, y[0]); });
+    if (!ys[0].sh) return '<div class="meta">השוואה ל-2022: ' + QUAL[3] + ".</div>";
+    var names = {};
+    Object.keys(now).forEach(function (n) { if (now[n].s >= 0.02) names[n] = 1; });
+    ys.forEach(function (y) { if (y.sh) Object.keys(y.sh).forEach(function (n) { if (y.sh[n] >= 0.03) names[n] = 1; }); });
+    var rows = Object.keys(names).sort(function (x, z) { return ((now[z] || {}).s || 0) - ((now[x] || {}).s || 0) || ((ys[0].sh || {})[z] || 0) - ((ys[0].sh || {})[x] || 0); });
+    function cell(y, n) { if (!y.sh) return "<td>—</td>"; if (!y.names[n]) return '<td class="na" title="לא התמודדה בשם זה">—</td>'; return "<td>" + pct(y.sh[n] || 0) + "</td>"; }
+    var t = '<table class="cmp"><thead><tr><th>רשימה</th><th>2026</th><th>2022</th><th>שינוי</th><th>2021</th></tr></thead><tbody>' +
+      rows.map(function (n) {
+        var c = now[n] ? now[n].code : null, d = "";
+        if (now[n] && ys[0].names[n]) { var dv = (now[n].s - (ys[0].sh[n] || 0)) * 100; d = (dv > 0 ? "+" : "") + dv.toFixed(1); }
+        var ran26 = P.some(function (p) { return pname(p[1]) === n; });
+        return "<tr><td>" + (c ? '<span class="sw" style="background:' + color(c) + '"></span>' : "") + esc(n) + "</td><td>" +
+          (now[n] ? pct(now[n].s) : ran26 ? "0.0%" : '<span class="na" title="לא התמודדה בשם זה">—</span>') + "</td>" + cell(ys[0], n) + '<td class="d">' + d + "</td>" + cell(ys[1], n) + "</tr>";
+      }).join("") + "</tbody></table>";
+    var q = ys[0].q;
+    return '<details class="hist"' + (ks.length > 1 || lastNear && lastNear[0] && lastNear[0].b.k === ks ? " open" : "") + "><summary>השוואה לבחירות 2022 ו-2021 (אחוזים בלבד)</summary>" + t +
+      '<div class="meta' + (q >= 2 ? " approx" : "") + '">' + (q >= 2 ? "⚠ " : "") + QUAL[q] + '. ההשוואה לפי שם הרשימה; "—" = לא התמודדה באותו שם (רשימות שהתאחדו, התפצלו או שינו שם אינן מושוות).</div></details>';
+  }
+  function saCode(b) { if (!S) return null; for (var i = 0; i < b.k.length; i++) { var c = S.k[b.k[i][0]]; if (c) return c; } return null; }
+  function saName(c) { var r = S.sa[c]; return r ? r[0] + (r[1] ? ", " + r[1] : " · אזור סטטיסטי " + (c % 10000)) : "אזור " + c; }
+  function saHtml(near) {
+    if (!S || !near.length) return "";
+    var c = saCode(near[0].b), r = c && S.sa[c];
+    if (!r) return "";
+    var top = [];
+    for (var i = 0; i < r[4].length && top.length < 3; i += 2) top.push(esc(pname(P[r[4][i]][1])) + " " + pct(r[4][i + 1] / r[3]));
+    return '<div class="card sa"><h3>האזור הסטטיסטי (למ"ס)</h3><div class="meta">' + esc(saName(c)) + " · לפי הקלפי הקרובה</div>" +
+      '<div class="stats"><span>אשכול חברתי-כלכלי: <b>' + (r[2] || "?") + "</b> מתוך 10" + (r[5] ? " (ברמת היישוב)" : "") + "</span>" +
+      (r[3] ? "<span>מובילות באזור ב-2026: " + top.join(" · ") + "</span>" : "<span>אין קלפי באזור זה</span>") + "</div>" +
+      '<div class="meta">1 = הנמוך ביותר, 10 = הגבוה ביותר (מדד הלמ"ס, 2021).</div></div>';
+  }
+
+  // Choropleth layers, loaded on first use. Mode: "off" | "<src>:winner" | "<src>:p:<partyIdx>" | "sa:ses"; src = nb (CEC neighborhoods) or sa (CBS statistical areas).
+  var layers = {}, layerP = {}, mode = "off", cur = null;
+  function sesColor(c) { var s = ["#b2182b", "#d6604d", "#f4a582", "#fddbc7", "#f7f7f7", "#d1e5f0", "#92c5de", "#4393c3", "#2166ac", "#053061"]; return c ? s[c - 1] : "#ccc"; }
+  function topoToGeo(t) { // TopoJSON (quantized, EPSG:3857) -> GeoJSON in WGS84
+    var sx = t.transform.scale[0], sy = t.transform.scale[1], tx = t.transform.translate[0], ty = t.transform.translate[1];
+    var arcs = t.arcs.map(function (a) { var x = 0, y = 0; return a.map(function (d) { x += d[0]; y += d[1]; var ll = merc2ll(x * sx + tx, y * sy + ty); return [ll[1], ll[0]]; }); });
+    function ring(ix) { var pts = []; ix.forEach(function (i) { var a = i >= 0 ? arcs[i] : arcs[~i].slice().reverse(); pts = pts.concat(pts.length ? a.slice(1) : a); }); return pts; }
+    var o = t.objects[Object.keys(t.objects)[0]];
+    return { type: "FeatureCollection", features: o.geometries.filter(function (g) { return g.type === "Polygon" || g.type === "MultiPolygon"; }).map(function (g) {
+      return { type: "Feature", properties: g.properties, geometry: { type: g.type, coordinates: g.type === "Polygon" ? g.arcs.map(ring) : g.arcs.map(function (p) { return p.map(ring); }) } };
+    }) };
+  }
+  // row -> [valid, [pidx, votes...]] for K26
+  function rowOf(src, f) { if (src === "sa") { var r = S.sa[f.properties.c]; return r && [r[3], r[4], r]; } var n = N.n[f.properties.u]; return n && [n[3], n[4], n]; }
+  function style(f) {
+    var src = mode.split(":")[0], m = mode.slice(src.length + 1), x = rowOf(src, f), st = { weight: 0.5, color: "#555", fillOpacity: 0.55, renderer: renderer };
+    if (m === "ses") { st.fillColor = x ? sesColor(x[2][2]) : "#ccc"; return st; }
+    if (!x || !x[0]) return Object.assign(st, { fillColor: "#bbb", fillOpacity: 0.15, dashArray: "2 3" });
+    if (m === "winner") st.fillColor = color(P[x[1][0]][0]);
+    else {
+      var pi = +m.slice(2), v = 0;
+      for (var i = 0; i < x[1].length; i += 2) if (x[1][i] === pi) v = x[1][i + 1];
+      st.fillColor = color(P[pi][0]); st.fillOpacity = Math.min(0.9, 0.05 + v / x[0] * 1.6);
+    }
+    return st;
+  }
+  function top4(x) { var h = []; for (var i = 0; i < x[1].length && h.length < 4; i += 2) h.push(esc(pname(P[x[1][i]][1])) + " " + pct(x[1][i + 1] / x[0])); return h.join(" · "); }
+  function popup(src, f) {
+    var x = rowOf(src, f); if (!x) return "";
+    if (src === "sa") {
+      var c = f.properties.c, r = x[2];
+      return "<b>" + esc(saName(c)) + '</b><br>אשכול חברתי-כלכלי: ' + (r[2] || "?") + "/10" + (r[5] ? " (ברמת היישוב)" : "") + "<br>" + (x[0] ? top4(x) : "אין קלפי באזור זה");
+    }
+    return "<b>" + esc(x[2][2]) + ", " + esc(x[2][1]) + "</b> (שכונת ועדת הבחירות)<br>" + (x[0] ? top4(x) : "אין קלפי של 2026 בשכונה זו");
+  }
+  function load(src) {
+    if (!layerP[src]) layerP[src] = Promise.all([extras(), fetch(src === "sa" ? "data/statareas.geojson" : "data/nb.topo.json").then(function (r) { return r.json(); })]).then(function (a) {
+      if (src === "sa" ? !S : !N) throw new Error("extras");
+      layers[src] = L.geoJSON(src === "sa" ? a[1] : topoToGeo(a[1]), { style: style, onEachFeature: function (f, l) { l.bindPopup(function () { return popup(src, f); }); l.on("click", function (e) { L.DomEvent.stopPropagation(e); }); } });
+    });
+    return layerP[src];
+  }
+  function setLayer(m) {
+    mode = m;
+    if (cur) { cur.remove(); cur = null; }
+    if (m === "off") return legend();
+    var src = m.split(":")[0];
+    status("טוען שכבה…");
+    load(src).then(function () { if (mode !== m) return; cur = layers[src]; cur.setStyle(style); cur.addTo(map); cur.bringToBack(); status(""); legend(); },
+      function () { layerP[src] = null; status("טעינת השכבה נכשלה."); });
+  }
+  function legend() {
+    var el = $("legend"); if (mode === "off") { el.innerHTML = ""; return; }
+    var src = mode.split(":")[0], m = mode.slice(src.length + 1), unit = src === "sa" ? 'אזור סטטיסטי (למ"ס)' : "שכונה (ועדת הבחירות)";
+    var none = ' <span class="sw" style="background:#bbb;opacity:.4"></span>מקווקו = אין קלפי באזור זה.';
+    if (m === "ses") el.innerHTML = "אשכול חברתי-כלכלי (1 נמוך, 10 גבוה): " + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(function (c) { return '<span class="sw" style="background:' + sesColor(c) + '"></span>' + c; }).join(" ");
+    else if (m === "winner") el.innerHTML = "הרשימה הגדולה בכל " + unit + " (2026). לחצו לפרטים." + none;
+    else el.innerHTML = "אחוז ההצבעה ל" + esc(pname(P[+m.slice(2)][1])) + " לפי " + unit + ": כהה יותר = יותר." + none;
+  }
+  function layerSelect() {
+    var sel = $("layer"); if (!sel) return;
+    function parties(src) { return P.slice(0, 14).map(function (p, i) { return '<option value="' + src + ":p:" + i + '">אחוז ל' + esc(pname(p[1])) + "</option>"; }).join(""); }
+    sel.innerHTML = '<option value="off">ללא</option><optgroup label="שכונות (ועדת הבחירות)"><option value="nb:winner">הרשימה המובילה</option>' + parties("nb") +
+      '</optgroup><optgroup label="אזורים סטטיסטיים (למ&quot;ס)"><option value="sa:winner">הרשימה המובילה</option><option value="sa:ses">אשכול חברתי-כלכלי</option>' + parties("sa") + "</optgroup>";
+    sel.onchange = function () { setLayer(sel.value); };
   }
 
   // ---------- search ----------
@@ -172,7 +355,7 @@
     if (LOC) return LOC;
     LOC = {};
     D.b.forEach(function (b) {
-      var L0 = LOC[b.t] || (LOC[b.t] = { name: b.t, n: 0, y: 0, x: 0, s: 90, w: 180, nn: -90, e: -180, k: 0 });
+      var L0 = LOC[b.t] || (LOC[b.t] = { name: b.t, c: b.c, n: 0, y: 0, x: 0, s: 90, w: 180, nn: -90, e: -180, k: 0 });
       L0.n++; L0.k += b.k.length; L0.y += b.y; L0.x += b.x;
       L0.s = Math.min(L0.s, b.y); L0.nn = Math.max(L0.nn, b.y); L0.w = Math.min(L0.w, b.x); L0.e = Math.max(L0.e, b.x);
     });
@@ -263,6 +446,55 @@
     });
   }
 
+  // CEC election search (the geocoder behind elections.govmap.gov.il; CORS *). Results: t 1 address, 2 street,
+  // 3 neighborhood, 4 settlement; x/y EPSG:3857; c locality code; h CEC neighborhood id. It is fuzzy ("הרצל 30" can
+  // return "אצ"ל 30"), so an address is accepted only when its street (or alias) and number equal what was typed,
+  // its locality matches, and the street is on the official street list of that locality (data.gov.il dataset 321).
+  function cecQ(s) {
+    return s.replace(/[\u0591-\u05C7]/g, "").replace(/[״“”]/g, '"').replace(/[׳‘’`]/g, "'").replace(/[^\p{L}\p{N}"' ]+/gu, " ")
+      .replace(/\s+/g, " ").trim().toLowerCase().slice(0, 100);
+  }
+  function merc2ll(x, y) { return [(2 * Math.atan(Math.exp(y / 6378137)) - Math.PI / 2) * 180 / Math.PI, x / 6378137 * 180 / Math.PI]; }
+  var streetsP = {};
+  function officialStreets(c) { // Set of sskel(street) for locality c, or null when the list is unavailable
+    if (!streetsP[c]) streetsP[c] = throttled("datagov", "https://data.gov.il/api/3/action/datastore_search?resource_id=9ad3862c-8391-4b2f-84a4-2d4c68625f4b&limit=5000&fields=" +
+      encodeURIComponent("שם_רחוב") + "&filters=" + encodeURIComponent(JSON.stringify({ "סמל_ישוב": c }))).then(function (r) {
+      var set = {}; ((r.result || {}).records || []).forEach(function (x) { set[sskel(x["שם_רחוב"] || "")] = 1; });
+      return Object.keys(set).length ? set : null;
+    }, function () { return null; });
+    return streetsP[c];
+  }
+  function locByCode(c) { var L = localities(); for (var k in L) if (L[k].c === c) return L[k]; return null; }
+  function cec(n, p) {
+    var q = cecQ(n); if ((q.match(/\p{L}/gu) || []).length < 2) return Promise.resolve(null);
+    return throttled("cec", "https://d3i80z2x83yp3b.cloudfront.net/search?q=" + encodeURIComponent(q)).then(function (res) {
+      res = Array.isArray(res) ? res : [];
+      var st = p.street ? sskel(p.street.replace(/^שדרות\s+/, "")) : "", locOk = function (r) { return p.loc ? r.c === p.loc.c : !p.city || cityOk([(r.n || "").split(", ").pop()], p); };
+      function hit(r, prec) { var ll = merc2ll(r.x, r.y), l = locByCode(r.c); return { lat: ll[0], lon: ll[1], label: r.n, prec: prec, src: "ועדת הבחירות (חיפוש כתובות)", c: r.c, nb: r.h || null, cname: l && l.name }; }
+      function stMatch(lbl) { var m = (lbl || "").split(", ")[0].match(/^(.*?)(?:\s(\d+)[א-ת]?)?$/); return m && { s: sskel(m[1].replace(/^שדרות\s+/, "")), n: m[2] || null }; }
+      var cands = [];
+      res.forEach(function (r) {
+        if (!locOk(r)) return;
+        if (r.t === 1 && p.num) {
+          var a = stMatch(r.n), b = stMatch(r.a);
+          if ((a && a.s === st && a.n === String(p.num)) || (b && b.s === st && b.n === String(p.num))) cands.push([0, r, "house"]);
+        } else if (r.t === 2 && st) {
+          var a2 = stMatch(r.n), b2 = stMatch(r.a);
+          if ((a2 && a2.s === st) || (b2 && b2.s === st)) cands.push([1, r, "street"]);
+        } else if (r.t === 3 && !p.num && st && sskel(r.n.split(", ")[0]) === st) cands.push([2, r, "area"]);
+      });
+      cands.sort(function (a, b) { return a[0] - b[0]; });
+      if (!cands.length) return null;
+      var r0 = cands[0];
+      if (r0[2] === "area") return hit(r0[1], "area");
+      return officialStreets(r0[1].c).then(function (set) {
+        // When the official list is reachable, the street must be on it (defends against fuzzy substitutions).
+        if (set && !set[st] && !set[sskel(p.street)]) return null;
+        return hit(r0[1], r0[2]);
+      });
+    });
+  }
+
   var PREC = { house: "כתובת מדויקת", street: "רחוב בלבד (מספר הבית לא נמצא)", area: "שכונה/אזור", settlement: "מרכז היישוב", local: "לפי כתובת קלפי תואמת" };
   function search() {
     var q = $("q").value.trim();
@@ -274,7 +506,8 @@
     status("מחפש את הכתובת…");
     // A bare settlement name: use that settlement's polling places from the data.
     if (!p.street && p.loc) return settlement(p.loc, "");
-    var steps = [function () { return nom("q=" + encodeURIComponent(free), p, "חיפוש חופשי"); }];
+    var steps = [function () { return cec(p.loc && p.city ? free.replace(/,/g, " ") : n, p); },
+      function () { return nom("q=" + encodeURIComponent(free), p, "חיפוש חופשי"); }];
     if (p.city) steps.push(function () {
       return nom("street=" + encodeURIComponent((p.num ? p.num + " " : "") + p.street) + "&city=" + encodeURIComponent(p.city) + (p.loc ? "&viewbox=" + box(p.loc) + "&bounded=1" : ""), p, "חיפוש מובנה");
     });
@@ -301,13 +534,14 @@
     })();
     function show(r) {
       if (id !== searchId) return;
-      status("נמצא: " + r.label + " · דיוק: " + PREC[r.prec] + " · מקור: " + r.src + ". אפשר לגרור את הסמן כדי לדייק.");
-      locate(r.lat, r.lon, r.label, r.prec);
+      var c = r.c || (p.loc && p.loc.c) || null;
+      status("נמצא: " + r.label + " · דיוק: " + PREC[r.prec] + " · מקור: " + r.src + (c ? " · קלפיות מתוך היישוב בלבד" : "") + ". אפשר לגרור את הסמן כדי לדייק.");
+      locate(r.lat, r.lon, r.label, r.prec, { c: c, nb: r.nb });
     }
   }
   function settlement(l, why) {
     status(why + "מוצג מרכז היישוב " + l.name + " (" + l.k + " קלפיות ב-" + l.n + " מקומות). דיוק: " + PREC.settlement + ". לחצו על המפה או גררו את הסמן כדי לדייק.");
-    locate(l.y, l.x, "מרכז " + l.name, "settlement");
+    locate(l.y, l.x, "מרכז " + l.name, "settlement", { c: l.c });
   }
 
   // Last resort: match the query against the polling-place addresses (locality first, then street)
@@ -339,7 +573,7 @@
       });
       var b = best[0];
       status(why + "מוצג לפי כתובת קלפי תואמת: " + b.a + ", " + b.t + ". דיוק: " + PREC.local + ". גררו את הסמן כדי לדייק.");
-      return locate(b.y, b.x, b.a + ", " + b.t, "local");
+      return locate(b.y, b.x, b.a + ", " + b.t, "local", { c: b.c });
     }
     if (loc) return settlement(localities()[loc], why);
     status(why + "לא נמצאה התאמה. נסו לכתוב רחוב, מספר ועיר, או לחצו על המפה.");

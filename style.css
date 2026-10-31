@@ -17,8 +17,18 @@ button.link{border:0;background:none;color:var(--accent);padding:2px 4px;text-de
 .alts button{font-size:.85rem;padding:4px 10px}
 .layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:16px;align-items:start}
 @media (max-width:860px){.layout{grid-template-columns:1fr}}
-#map{height:560px;border-radius:14px;border:1px solid var(--line);position:sticky;top:12px;z-index:0}
-@media (max-width:860px){#map{height:340px;position:static}}
+.mapcol{position:sticky;top:12px}
+#map{height:560px;border-radius:14px;border:1px solid var(--line);z-index:0}
+.layerbar{font-size:.88rem;margin-bottom:6px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
+.layerbar select{font:inherit;padding:4px 6px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-inline-end:4px;vertical-align:middle}
+table.cmp{border-collapse:collapse;font-size:.85rem;margin:6px 0;width:100%}
+table.cmp th,table.cmp td{padding:2px 6px;border-bottom:1px solid var(--line);text-align:start;font-variant-numeric:tabular-nums}
+table.cmp td.d{direction:ltr;text-align:end}
+.na{color:var(--muted)}
+.approx{color:#b06000}
+.card.sa{border-color:var(--accent)}
+@media (max-width:860px){#map{height:340px}.mapcol{position:static}}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:12px}
 .card h3{margin:0;font-size:1.05rem}
 .card .meta{color:var(--muted);font-size:.9rem}

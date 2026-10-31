@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>איפה הצביעו לידי? קלפיות ותוצאות – הבחירות לכנסת ה-26</title>
+<link rel="icon" href="data:,">
 <meta name="description" content="הקלידו כתובת בישראל וקבלו את הקלפיות הקרובות ואת תוצאות ההצבעה בכל קלפי בבחירות לכנסת ה-26 (27.10.2026).">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <link rel="stylesheet" href="style.css">
@@ -27,7 +28,10 @@
   </section>
 
   <div class="layout">
-    <div id="map" aria-label="מפה"></div>
+    <div class="mapcol">
+      <div class="layerbar"><label for="layer">שכבת מפה:</label> <select id="layer"><option value="off">ללא</option></select> <span id="legend" class="meta"></span></div>
+      <div id="map" aria-label="מפה"></div>
+    </div>
     <section id="results" aria-label="תוצאות"></section>
   </div>
 
@@ -38,15 +42,21 @@
       <li>כל בוחר משובץ לקלפי לפי הכתובת הרשומה שלו במרשם האוכלוסין, לא לפי קרבה. "הקלפי הקרובה" היא הערכה בלבד. את הקלפי המדויקת שלכם בודקים באתר הרשמי לפי מספר תעודת זהות: <a href="https://www.gov.il/apps/moin/bocharim/" target="_blank" rel="noopener">gov.il/apps/moin/bocharim</a>.</li>
       <li>קולות המעטפות הכפולות (חיילים, נציגויות, אסירים, מאושפזים ועוד) אינם משויכים למקום ולכן אינם מוצגים.</li>
       <li>אחוז ההצבעה = מצביעים חלקי בעלי זכות בחירה בקלפי. חלוקת הקולות מחושבת מתוך הקולות הכשרים. רשימות מתחת ל-1% בקלפי מקובצות ב"אחרות".</li>
-      <li>המרחק נמדד בקו אוויר מהנקודה שנמצאה. איתור הכתובת נעשה ב-OpenStreetMap ועלול לטעות; אפשר ללחוץ על המפה כדי להזיז את הנקודה.</li>
+      <li>איתור הכתובת: קודם במנוע החיפוש של אתר הבחירות של ועדת הבחירות (מתקבל רק כשהרחוב, המספר והיישוב זהים למה שהוקלד, והרחוב מופיע ברשימת הרחובות הרשמית של היישוב), ואם לא נמצא, ב-OpenStreetMap, Photon ו-GovMap. ליד כל תוצאה מוצג מידת הדיוק. כשהיישוב ידוע, מוצגות רק קלפיות של אותו יישוב (שם מצביעים התושבים). המרחק נמדד בקו אוויר; אפשר ללחוץ על המפה או לגרור את הסמן כדי להזיז את הנקודה.</li>
+      <li>שכונות: חלוקת השכונות של ועדת הבחירות. כל שכונה מקבצת את הקלפיות שמקומן בתוכה, ולכן היא מתארת את מקום הקלפי ולא בדיוק את מקום המגורים. תוצאות 2026 בשכונה מחושבות מנתוני הקלפיות באתר; 2022 ו-2021 מקבצי השכונות של ועדת הבחירות, באחוזים בלבד.</li>
+      <li>השוואה לבחירות 2022 (כנסת 25) ו-2021 (כנסת 24): כל קלפי של 2026 שויכה לקלפי או למקום הקלפי המקביל בבחירות הקודמות. מוצגים אחוזים בלבד. כשאין קלפי מקבילה מדויקת, מוצג סכום מקום הקלפי הקרוב ומסומן "משוערת". ההשוואה לפי שם הרשימה בלבד.</li>
+      <li>אזורים סטטיסטיים ואשכול חברתי-כלכלי: הלשכה המרכזית לסטטיסטיקה (אזורים סטטיסטיים 2022, מדד חברתי-כלכלי 2021; הגבולות פושטו ומדויקים פחות ברמת הרחוב). בכ-22% מהאזורים המיושבים אין קלפי, והם מסומנים "אין קלפי באזור זה". תוצאות האזור הן סכום הקלפיות שנמצאות בתוכו, וזה רק קירוב לאזור המגורים של הבוחרים.</li>
       <li id="ver"></li>
     </ul>
     <h2>מקורות</h2>
     <ul>
       <li>תוצאות לפי קלפי: ועדת הבחירות המרכזית לכנסת ה-26 (קובץ <code>expb.csv</code>), דרך העותק המתעדכן של <a href="https://github.com/harelc/elections-vote-transfer" target="_blank" rel="noopener">harelc/elections-vote-transfer</a> (רישיון CC BY-NC-SA 4.0), והצלבה מול העותק ב-<a href="https://github.com/shaielc/Behirot" target="_blank" rel="noopener">shaielc/Behirot</a>.</li>
       <li>מקומות הקלפי וקואורדינטות: שכבה 243675 של <a href="https://www.govmap.gov.il/?lay=243675" target="_blank" rel="noopener">GovMap</a> / ועדת הבחירות המרכזית, דרך הקובץ <code>polling_places.csv</code> של shaielc/Behirot.</li>
+      <li>תוצאות 2022 ו-2021 לפי קלפי: ועדת הבחירות המרכזית (votes25/votes24.bechirot.gov.il), שיוך קלפיות בין מערכות בחירות לפי harelc/elections-vote-transfer וכתובות הקלפיות של JacobWeinbren.</li>
+      <li>אזורים סטטיסטיים ומדד חברתי-כלכלי: <a href="https://www.cbs.gov.il/he/Pages/geo-layers.aspx" target="_blank" rel="noopener">הלשכה המרכזית לסטטיסטיקה</a> (רישיון פתוח, גבולות מפושטים).</li>
+      <li>שכונות ותוצאות לפי שכונה 2022/2021, וחיפוש כתובות: <a href="https://elections.govmap.gov.il/" target="_blank" rel="noopener">אתר הבחירות של ועדת הבחירות המרכזית ו-GovMap</a>. רשימת הרחובות הרשמית: רשות האוכלוסין, <a href="https://data.gov.il/dataset/321" target="_blank" rel="noopener">data.gov.il</a>.</li>
       <li>שמות הרשימות ואותיות הפתק: <a href="https://www.gov.il/he/pages/candidates-lists-26" target="_blank" rel="noopener">רשימות המועמדים לכנסת ה-26</a>, ועדת הבחירות המרכזית.</li>
-      <li>מפה: © תורמי <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>. איתור כתובות: <a href="https://nominatim.org/" target="_blank" rel="noopener">Nominatim</a>. ספריית מפות: Leaflet.</li>
+      <li>מפה: © תורמי <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>. איתור כתובות נוסף: <a href="https://nominatim.org/" target="_blank" rel="noopener">Nominatim</a>, <a href="https://photon.komoot.io/" target="_blank" rel="noopener">Photon</a>, GovMap. ספריית מפות: Leaflet.</li>
       <li>אתר עצמאי, לא רשמי, ללא קשר לוועדת הבחירות. קוד ושיטה: <a href="https://github.com/zozo123/kalpi-map" target="_blank" rel="noopener">GitHub</a>.</li>
     </ul>
   </section>

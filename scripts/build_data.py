@@ -284,7 +284,7 @@ def main():
         key = (lat, lon, clean(p["שם ישוב בחירות"]), clean(p["מקום קלפי"]), clean(p["כתובת קלפי"]))  # one point can host several venues/localities
         b = buildings.get(key)
         if b is None:
-            b = buildings[key] = {"y": lat, "x": lon, "t": clean(p["שם ישוב בחירות"]),
+            b = buildings[key] = {"y": lat, "x": lon, "c": int(num(p["סמל ישוב בחירות"])), "t": clean(p["שם ישוב בחירות"]),
                                   "a": clean(p["כתובת קלפי"]), "v": clean(p["מקום קלפי"]), "k": []}
         votes = []
         for i, c in enumerate(codes):
