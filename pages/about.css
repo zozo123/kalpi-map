@@ -1,0 +1,18 @@
+/* about.html only. Depends on pages/pages.css. */
+.cta { display: flex; gap: 1.2rem; align-items: center; justify-content: space-between; flex-wrap: wrap; background: linear-gradient(135deg, #ffffff, #f2f7f6); border-color: #cfe3e0; margin-bottom: 1rem; }
+.cta h2 { font-size: 1.4rem; margin-bottom: .2rem; } .cta p { margin: 0; max-width: 34em; }
+.btn.big { font-size: 1.02rem; padding: .7rem 1.2rem; }
+.steps4 { list-style: none; padding: 0; margin: 1.2rem 0 2rem; display: grid; gap: 1rem; }
+.steps4 li { display: grid; grid-template-columns: 2.6rem 1fr; gap: .9rem; align-items: start; }
+.steps4 .n { width: 2.4rem; height: 2.4rem; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font: 800 1.1rem var(--head); }
+.steps4 h3 { margin: .25rem 0 .2rem; } .steps4 p { margin: 0; color: var(--ink2); }
+ul.clean { padding-inline-start: 1.1rem; } ul.clean li { margin: .5rem 0; color: var(--ink2); }
+.grid.limits { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.lim .ic { font-size: 1.5rem; line-height: 1; margin-bottom: .4rem; }
+.lim p { margin: 0; color: var(--ink2); font-size: .97rem; }
+table.src td:first-child { font-weight: 700; width: 34%; }
+details { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: .7rem 1rem; margin: .6rem 0; }
+details summary { cursor: pointer; font: 700 1rem var(--head); }
+details p { margin: .6rem 0 0; color: var(--ink2); }
+[data-k]:empty { display: none; }
+@media (max-width: 600px) { table.src td:first-child { width: 40%; } .cta .btn { width: 100%; justify-content: center; } }

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>הסיפור הארצי – הבחירות לכנסת ה-26 לפי שכונה ומבנה</title>
+<meta name="description" content="סיפור גלילה על מפת הבחירות לכנסת ה-26: מי הובילה בכל שכונה ומבנה, השינוי מ-2021 ל-2022 ול-2026, הנדנודים הגדולים וגאוגרפיית ההצבעה. הכול מחושב מנתוני האתר.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml"><link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png"><link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&family=Heebo:wght@500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="pages/pages.css">
+<link rel="stylesheet" href="pages/story.css">
+</head>
+<body class="kp">
+<header class="kp-nav">
+  <a class="brand" href="index.html">קלפי<span>מפה</span></a>
+  <nav aria-label="ניווט">
+    <a href="index.html">חיפוש לפי כתובת</a>
+    <a href="story.html" aria-current="page">הסיפור הארצי</a>
+    <a href="about.html">איך זה עובד</a>
+  </nav>
+</header>
+
+<main id="story" aria-busy="true">
+  <div class="wrap hero">
+    <div class="eyebrow">הבחירות לכנסת ה-26 · 27 באוקטובר 2026</div>
+    <h1>מפה אחת, שלוש מערכות בחירות</h1>
+    <p class="lede">מי הובילה בכל שכונה ובכל מבנה קלפי, איך השתנתה המפה מ-2021 ל-2022 ול-2026, איפה היו התזוזות הגדולות ואיפה הצביעו יותר. כל מספר בעמוד מחושב בדפדפן שלכם מקובצי הנתונים של האתר, ולכל מספר מצוין המקור.</p>
+    <div id="kpis" class="grid kpis" aria-live="polite"><div class="card kpi"><div class="v">…</div><div class="l">טוען נתונים</div></div></div>
+    <div id="natbars" class="card"></div>
+  </div>
+
+  <section class="scrolly" aria-label="סיפור במפה">
+    <div class="steps" id="steps"></div>
+    <div class="stage">
+      <figure class="mapbox" id="mapbox">
+        <canvas id="map" role="img" aria-label="מפת ישראל לפי שכונות ועדת הבחירות"></canvas>
+        <div class="maptitle" id="maptitle"></div>
+        <div class="tip" id="tip" hidden></div>
+        <div class="controls" id="controls">
+          <div class="row modes" role="group" aria-label="מה מוצג במפה">
+            <button class="btn" data-mode="winner">המובילה</button>
+            <button class="btn" data-mode="share">אחוז לרשימה</button>
+            <button class="btn" data-mode="swing">שינוי 22→26</button>
+            <button class="btn" data-mode="turnout">אחוז הצבעה</button>
+            <button class="btn" data-mode="dots">לפי מבנה</button>
+          </div>
+          <div class="row years" id="yearrow">
+            <button class="btn play" id="play" aria-label="הפעלה: 2021 עד 2026">▶</button>
+            <input type="range" id="year" min="0" max="2" step="1" value="2" aria-label="שנת בחירות">
+            <div class="ticks"><span>2021</span><span>2022</span><span>2026</span></div>
+          </div>
+          <div class="row">
+            <label class="sel" id="partyrow">רשימה: <select id="party"></select></label>
+            <label class="sel">אזור: <select id="region">
+              <option value="all">כל הארץ</option><option value="dan">גוש דן</option><option value="jlm">ירושלים</option>
+              <option value="north">חיפה והצפון</option><option value="south">באר שבע והנגב</option></select></label>
+          </div>
+          <div class="legend" id="legend"></div>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <section class="block" id="swings">
+      <h2>התזוזות הגדולות, 2022 → 2026</h2>
+      <p class="muted" id="swingintro"></p>
+      <div class="grid two" id="swingtables"></div>
+      <h3 style="margin-top:2rem">לכל רשימה: השכונה עם העלייה והירידה הגדולות</h3>
+      <div class="tablewrap card" id="swingall"></div>
+    </section>
+
+    <section class="block" id="shares">
+      <h2>התמונה הארצית בשלוש מערכות</h2>
+      <p class="muted" id="sharesintro"></p>
+      <div class="tablewrap card" id="sharetable"></div>
+    </section>
+
+    <section class="block" id="turnout">
+      <h2>גאוגרפיית ההצבעה</h2>
+      <p class="muted" id="turnintro"></p>
+      <div class="grid two">
+        <div class="card"><h3>אחוז הצבעה לפי אשכול חברתי-כלכלי</h3><div id="seschart"></div><p class="small muted" id="sesnote"></p></div>
+        <div class="card"><h3>היישובים עם אחוז ההצבעה הגבוה והנמוך</h3><div id="towns"></div></div>
+      </div>
+    </section>
+
+    <section class="block" id="sources">
+      <h2>מקורות ושיטה</h2>
+      <div class="card" id="srcs"></div>
+    </section>
+  </div>
+</main>
+<footer class="wrap foot">אתר עצמאי ולא רשמי, ללא קשר לוועדת הבחירות המרכזית. <a href="about.html">איך זה עובד ומה המגבלות</a> · <a href="https://github.com/zozo123/kalpi-map" target="_blank" rel="noopener">קוד ונתונים ב-GitHub</a></footer>
+<script src="pages/story.js"></script>
+</body>
+</html>

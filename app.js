@@ -2,22 +2,87 @@
 (function () {
   var NEAREST = 5, MIN_SHARE = 0.01;
   var COLORS = {};
-  var OTHER = "#8c939b";
-  var D = null, P = [], marker = null, layerNear = null, allLayer = null;
+  var OTHER = "#b8bcc2", DOT = "#3f3d39"; // OTHER is hatched in CSS; no longer equals the צבע שחור list colour
+  var D = null, P = [], marker = null, layerNear = null, allLayer = null, NAT = null, nearMarkers = [];
   var $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
   var fmt = function (n) { return n.toLocaleString("he-IL"); };
   var pct = function (x) { return (x * 100).toFixed(1) + "%"; };
 
-  function status(t) { $("status").textContent = t; }
+  function status(t, html) { if (html) $("status").innerHTML = t; else $("status").textContent = t; }
+
+  // ---------- layout helpers: media queries and the mobile bottom sheet ----------
+  var mq = window.matchMedia ? window.matchMedia("(max-width: 860px)") : { matches: false, addEventListener: function () {} };
+  var reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  var sheet = (function () {
+    var panel = $("panel"), btn = $("sheetToggle"), scroller = $("panelScroll"), st = { state: "peek" }, drag = null, ORDER = ["peek", "half", "full"];
+    function H() { return panel.offsetHeight || window.innerHeight * 0.92; }
+    function peekPx() { var f = $("searchForm"); return Math.round(Math.min(window.innerHeight * 0.5, Math.max(190, f.offsetTop + f.offsetHeight + 14 - scroller.scrollTop))); }
+    function visible(s) { return s === "full" ? H() : s === "half" ? Math.round(window.innerHeight * 0.56) : peekPx(); }
+    function set(s) {
+      st.state = s; panel.setAttribute("data-state", s);
+      btn.setAttribute("aria-expanded", s !== "peek" ? "true" : "false");
+      btn.setAttribute("aria-label", s === "full" ? "כיווץ חלונית התוצאות" : "הרחבת חלונית התוצאות");
+      if (!mq.matches) { panel.style.removeProperty("--sheet-y"); return; }
+      if (s === "peek") scroller.scrollTop = 0;
+      panel.style.setProperty("--sheet-y", Math.max(0, H() - visible(s)) + "px");
+    }
+    btn.addEventListener("pointerdown", function (e) {
+      if (!mq.matches) return;
+      drag = { y0: e.clientY, t0: Date.now(), base: H() - visible(st.state), moved: false };
+      panel.classList.add("dragging"); try { btn.setPointerCapture(e.pointerId); } catch (x) {}
+    });
+    btn.addEventListener("pointermove", function (e) {
+      if (!drag) return; var dy = e.clientY - drag.y0; if (Math.abs(dy) > 5) drag.moved = true;
+      panel.style.setProperty("--sheet-y", Math.max(0, Math.min(H() - 120, drag.base + dy)) + "px");
+    });
+    function end(e) {
+      if (!drag) return; panel.classList.remove("dragging"); var d = drag; drag = null;
+      if (!d.moved) return set(st.state);
+      var dy = e.clientY - d.y0, v = dy / Math.max(1, Date.now() - d.t0), vis = H() - Math.max(0, d.base + dy), best = st.state, bd = 1e9;
+      ORDER.forEach(function (k) { var dd = Math.abs(visible(k) - vis); if (dd < bd) { bd = dd; best = k; } });
+      if (Math.abs(v) > 0.6) best = ORDER[Math.max(0, Math.min(2, ORDER.indexOf(st.state) + (v < 0 ? 1 : -1)))];
+      st.skipClick = true; set(best);
+    }
+    btn.addEventListener("pointerup", end); btn.addEventListener("pointercancel", end);
+    btn.addEventListener("click", function () {
+      if (st.skipClick) { st.skipClick = false; return; }
+      set(st.state === "peek" ? "half" : st.state === "half" ? "full" : "peek");
+    });
+    window.addEventListener("resize", function () { set(st.state); });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { set(st.state); });
+    st.set = set; st.visible = visible; st.scroller = scroller;
+    set("peek");
+    return st;
+  })();
 
   // ---------- map ----------
-  var map = L.map("map", { zoomControl: true }).setView([31.7, 34.95], 8);
+  var ISRAEL = L.latLngBounds([[29.48, 34.25], [33.33, 35.9]]);
+  var map = L.map("map", { zoomControl: false, zoomSnap: 0.25, zoomDelta: 0.5, wheelPxPerZoomLevel: 90 });
+  L.control.zoom({ position: "topleft", zoomInTitle: "התקרבות", zoomOutTitle: "התרחקות" }).addTo(map);
+  // Light, desaturated basemap: OSM tiles (Hebrew labels) toned down with a CSS filter (.basemap in style.css).
+  // CARTO Positron now needs an API key, so it is not used.
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    maxZoom: 19, className: "basemap", attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(map);
+  function placeAttribution() { map.attributionControl.setPosition(mq.matches ? "topleft" : "bottomright"); }
+  placeAttribution(); mq.addEventListener && mq.addEventListener("change", function () { placeAttribution(); sheet.set(sheet.state); map.invalidateSize(); });
+  map.fitBounds(ISRAEL, mapPad(false));
+  // Map padding so the fly-to target is not hidden behind the mobile bottom sheet or the layer control.
+  function mapPad(forState) {
+    var cover = mq.matches ? sheet.visible(forState || sheet.state) : 0;
+    return { paddingTopLeft: [30, mq.matches ? 70 : 90], paddingBottomRight: [30, 30 + cover] };
+  }
+  function flyTo(bounds, maxZoom) {
+    var o = mapPad(); o.maxZoom = maxZoom || 16;
+    if (reduceMotion) return map.fitBounds(bounds, o);
+    o.duration = 1.15; o.easeLinearity = 0.2;
+    map.flyToBounds(bounds, o);
+  }
   var renderer = L.canvas({ padding: 0.5 });
-  map.on("click", function (e) { locate(e.latlng.lat, e.latlng.lng, "נקודה שנבחרה במפה", "manual"); });
+  // Map click drops a point (desktop); on touch, a long-press does, so panning never triggers a search.
+  map.on("click", function (e) { if (!mq.matches) locate(e.latlng.lat, e.latlng.lng, "נקודה במפה", "manual"); });
+  map.on("contextmenu", function (e) { locate(e.latlng.lat, e.latlng.lng, "נקודה במפה", "manual"); });
 
   // ---------- data ----------
   status("טוען נתונים…");
@@ -26,25 +91,40 @@
     setTimeout(layerSelect, 0);
     P.forEach(function (p) { COLORS[p[0]] = p[4]; });
     d.b.forEach(function (b) { b.agg = aggregate(b.k); });
+    NAT = aggregate([].concat.apply([], d.b.map(function (b) { return b.k; })));
+    NAT.share = {}; NAT.parties.forEach(function (p) { NAT.share[p.code] = p.v / NAT.valid; });
     allLayer = L.layerGroup(d.b.map(function (b) {
       var top = b.agg.parties[0];
-      return L.circleMarker([b.y, b.x], { renderer: renderer, radius: 4, weight: 1, color: "#fff",
-        fillColor: top ? color(top.code) : OTHER, fillOpacity: .85 })
+      return (b.dot = L.circleMarker([b.y, b.x], { renderer: renderer, radius: 3, weight: 1, color: "#fff",
+        fillColor: DOT, fillOpacity: .9 }))
         .bindPopup(function () { return popupHtml(b); })
         .on("click", function (e) { L.DomEvent.stopPropagation(e); });
     }));
     map.on("zoomend", toggleAll); toggleAll();
     var asOf = d.source_as_of ? new Date(d.source_as_of).toLocaleString("he-IL", { timeZone: "Asia/Jerusalem", dateStyle: "short", timeStyle: "short" }) : "?";
     var nk = d.b.reduce(function (s, b) { return s + b.k.length; }, 0);
-    var ver = "תוצאות סופיות, נתונים נכונים ל-31 באוקטובר 2026 (תמונת מצב " + asOf + " שעון ישראל). מקור: ועדת הבחירות המרכזית דרך harelc/elections-vote-transfer. " +
-      fmt(nk) + " קלפיות ב-" + fmt(d.b.length) + " מקומות.";
-    $("ver").textContent = ver; $("dataver").textContent = ver;
+    var dt = d.source_as_of ? new Date(d.source_as_of) : null;
+    TS = dt ? "נתוני ועדת הבחירות המרכזית, נכונים ל-" + dt.toLocaleDateString("he-IL", { timeZone: "Asia/Jerusalem" }) + " בשעה " +
+      dt.toLocaleTimeString("he-IL", { timeZone: "Asia/Jerusalem", hour: "2-digit", minute: "2-digit" }) + " (שעון ישראל). ייתכנו הבדלים קטנים מהפרסום הרשמי הסופי." : "נתוני ועדת הבחירות המרכזית.";
+    var ver = TS + " מקור: ועדת הבחירות המרכזית דרך harelc/elections-vote-transfer. " + fmt(nk) + " קלפיות ב-" + fmt(d.b.length) + " מקומות.";
+    $("ver").textContent = ver; $("dataver").textContent = ver; $("ts").textContent = dt ? "נתונים נכונים ל-" + dt.toLocaleDateString("he-IL", { timeZone: "Asia/Jerusalem" }) + " (שעון ישראל)" : "";
     status("");
-    var q = new URLSearchParams(location.search).get("q");
-    if (q) { $("q").value = q; search(); }
-  }).catch(function () { status("טעינת הנתונים נכשלה. נסו לרענן את הדף."); });
+    var usp = new URLSearchParams(location.search), queued = pending; pending = false;
+    applyUrl(usp);
+    if (queued && !usp.get("q") && $("q").value.trim()) search(); // a search typed while the data was loading
+  }).catch(function () {
+    $("status").innerHTML = '<div class="banner danger" role="alert">לא הצלחנו לטעון את נתוני הקלפיות. בדקו את החיבור ונסו שוב. <button type="button" class="linkish" onclick="location.reload()">נסו שוב</button></div>';
+  });
 
-  function toggleAll() { if (!allLayer) return; if (map.getZoom() >= 12) allLayer.addTo(map); else allLayer.remove(); }
+  // Building dots: neutral grey from z11 (r3), larger from z14 (r4); party colour only when the "הרשימה הגדולה" layer is on.
+  function toggleAll() {
+    if (!allLayer) return; var z = map.getZoom();
+    if (z >= 11) { allLayer.addTo(map); var r = z >= 14 ? 4 : 3; if (toggleAll.r !== r) { toggleAll.r = r; D.b.forEach(function (b) { b.dot.setRadius(r); }); } } else allLayer.remove();
+  }
+  function dotColors() {
+    if (!D) return; var w = /:winner$/.test(mode);
+    D.b.forEach(function (b) { var t = b.agg.parties[0]; b.dot.setStyle({ fillColor: w && t ? color(t.code) : DOT }); });
+  }
   function color(code) { return COLORS[code] || OTHER; }
 
   // kalpi row: [barzel, kalpiNo, eligible, voters, invalid, accessible, [partyIdx, votes, ...]]
@@ -101,6 +181,14 @@
     ctx = ctx || {};
     if (ctx.nb && !N && !ctx.waited) { ctx.waited = 1; return extras().then(function () { locate(lat, lon, label, prec, ctx); }); }
     var all = D.b.map(function (b) { return { b: b, d: dist(lat, lon, b.y, b.x) }; }).sort(function (a, b) { return a.d - b.d; });
+    if (all[0].d > 20000) { status(""); $("status").innerHTML = '<div class="banner warn" role="alert">הנקודה רחוקה מכל קלפי בישראל.</div>'; return; }
+    var lc = ctx.c && locByCode(ctx.c);
+    where = { prec: prec || "manual", src: ctx.src || "", c: ctx.c || null, cname: lc ? lc.name : null, why: ctx.why || "", kalpi: ctx.kalpi || null };
+    if (!ctx.fromUrl) {
+      if (ctx.kalpi) setUrl({ kalpi: ctx.c + "-" + ctx.kalpi }, true);
+      else if (prec === "manual" || prec === "geo") setUrl({ ll: lat.toFixed(prec === "geo" ? 3 : 4) + "," + lon.toFixed(prec === "geo" ? 3 : 4) }, true);
+    }
+    openPlace = ctx.kalpi ? 0 : -1;
     var near = all, scope = "all";
     if (ctx.c && D.b.some(function (b) { return b.c === ctx.c; })) {
       var inLoc = all.filter(function (n) { return n.b.c === ctx.c; });
@@ -113,52 +201,385 @@
       near = inLoc.length >= NEAREST ? inLoc : inLoc.concat(all.filter(function (n) { return n.b.c !== ctx.c; }).map(function (n) { n.out = true; return n; }));
     }
     near = near.slice(0, NEAREST);
-    lastCtx = { c: ctx.c, nb: ctx.nb && N ? N.h[ctx.nb] : null, scope: scope };
+    lastCtx = { c: ctx.c, nb: ctx.nb && N ? N.h[ctx.nb] : null, scope: scope, kalpi: ctx.kalpi || null };
     if (marker) marker.remove();
-    marker = L.marker([lat, lon], { title: label, draggable: true }).addTo(map).bindTooltip(label);
-    marker.on("dragend", function () { var ll = marker.getLatLng(); status("נקודה שנבחרה במפה."); locate(ll.lat, ll.lng, "נקודה שנבחרה במפה", "manual", { c: ctx.c }); });
+    marker = L.marker([lat, lon], { title: label, alt: "הנקודה שחיפשתם: " + label, draggable: true, keyboard: true, zIndexOffset: 1000,
+      icon: L.divIcon({ className: "", html: '<span class="home"></span>', iconSize: [22, 22], iconAnchor: [11, 11] }) }).addTo(map).bindTooltip(label);
+    marker.on("dragend", function () { var ll = marker.getLatLng(); status(""); locate(ll.lat, ll.lng, "נקודה במפה", "manual", { c: ctx.c }); });
     if (layerNear) layerNear.remove();
-    layerNear = L.layerGroup(near.map(function (n, i) {
-      return L.marker([n.b.y, n.b.x], { icon: L.divIcon({ className: "", html: '<span class="card-num" style="display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;border-radius:50%;background:#1f5fbf;color:#fff;font-weight:700;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)">' + (i + 1) + "</span>", iconSize: [24, 24], iconAnchor: [12, 12] }) })
-        .bindPopup(popupHtml(n.b));
-    })).addTo(map);
-    map.fitBounds(L.latLngBounds([[lat, lon]].concat(near.map(function (n) { return [n.b.y, n.b.x]; }))).pad(0.2));
+    nearMarkers = near.map(function (n, i) {
+      return L.marker([n.b.y, n.b.x], { title: (i + 1) + ". " + n.b.v, alt: "מקום קלפי " + (i + 1) + ": " + n.b.v, riseOnHover: true,
+        icon: L.divIcon({ className: "", html: '<span class="pin">' + (i + 1) + "</span>", iconSize: [28, 28], iconAnchor: [14, 14], popupAnchor: [0, -12] }) })
+        .bindPopup(popupHtml(n.b)).on("click", function () { openCard(i); })
+        .on("mouseover", function () { var li = $("place-" + i); if (li) li.classList.add("hi"); }).on("mouseout", function () { var li = $("place-" + i); if (li) li.classList.remove("hi"); });
+    });
+    layerNear = L.layerGroup(nearMarkers).addTo(map);
+    if (mq.matches && sheet.state === "peek") sheet.set("half");
+    flyTo(L.latLngBounds([[lat, lon]].concat(near.map(function (n) { return [n.b.y, n.b.x]; }))).pad(0.15), 16);
     lastNear = near; lastLabel = label;
+    scrollOnRender = true;
     render(near, label);
     extras().then(function () { if (lastNear === near) render(near, label); });
     // Exposed for automated tests (no network side effects)
     window.kalpiLast = { lat: lat, lon: lon, prec: prec || "manual", barzel: [].concat.apply([], near.map(function (n) { return n.b.k.map(function (k) { return k[0]; }); })), c: ctx.c || null, scope: scope };
+    try { document.dispatchEvent(new CustomEvent("kalpi:located", { detail: window.kalpiLast })); } catch (e) {}
+  }
+
+  // ---------- editorial rendering (hierarchy and copy per /workspace/kalpi-shared/ux_brief.md §2, §4) ----------
+  // Colours for lists that ran only in 2022/2021 (2026 lists use their own colour by name).
+  var PAST_COLORS = { "יש עתיד": "#3a78c9", "המחנה הממלכתי": "#3aa0c8", "כחול לבן": "#3aa0c8", "העבודה": "#d23a3a", "מרצ": "#3d9a4f",
+    'חד"ש-תע"ל': "#4c8b3a", 'בל"ד': "#6f8a2a", "הבית היהודי": "#5b6fb5", "ימינה": "#7a5fb0", "תקווה חדשה": "#2f7590", "חופש כלכלי": "#c39a2c", "הכלכלית החדשה": "#c39a2c" };
+  function colorByName(n) {
+    for (var i = 0; i < P.length; i++) if (pname(P[i][1]) === n) return P[i][4];
+    return PAST_COLORS[n] || OTHER;
+  }
+  function bd(s) { return '<bdi class="n">' + s + "</bdi>"; } // bidi-safe numbers
+  function pts(x) { return x > 0.05 ? "▲ +" + x.toFixed(1) + " נק'" : x < -0.05 ? "▼ −" + Math.abs(x).toFixed(1) + " נק'" : "0.0 נק'"; }
+  function flat(near) { return [].concat.apply([], near.map(function (n) { return n.b.k; })); }
+  function turnout(A) { return A.eligible ? A.voters / A.eligible : 0; }
+  var scrollOnRender = false, where = null, TS = "", openPlace = -1;
+  var BADGE = {
+    house: ["כתובת מדויקת", "ok", "הכתובת נמצאה עד רמת מספר הבית."], street: ["רחוב בלבד", "warn", "מספר הבית לא נמצא; הנקודה היא על הרחוב."],
+    area: ["שכונה או אזור", "warn", "הנקודה היא מרכז השכונה או האזור."], settlement: ["מרכז היישוב", "warn", "הכתובת לא נמצאה; מוצגות קלפיות סמוך למרכז היישוב."],
+    local: ["לפי כתובת של קלפי", "warn", "נמצאה קלפי שכתובתה דומה למה שהוקלד."], manual: ["נקודה שבחרתם", "neutral", "הנקודה נבחרה במפה."],
+    geo: ["המיקום שלי", "neutral", "לפי המיקום שהדפדפן מסר. לא נשמר."], kalpi: ["קלפי", "neutral", "נפתח מקישור לקלפי."]
+  };
+  function srcName(s) { return !s ? "" : /ועדת/.test(s) ? "ועדת הבחירות" : /OpenStreetMap/.test(s) ? "OpenStreetMap" : s; }
+
+  // Aggregates per CEC neighborhood and per locality, built once from the kalpi data.
+  var UNB = null, ULOC = {};
+  function nbUnits() {
+    if (UNB || !N) return UNB;
+    UNB = {};
+    D.b.forEach(function (b, bi) { b.k.forEach(function (k) { var u = N.k[k[0]]; if (u == null) return; var o = UNB[u] || (UNB[u] = { ks: [], bs: {} }); o.ks.push(k); o.bs[bi] = 1; }); });
+    return UNB;
+  }
+  function nbAgg(u) { var o = nbUnits() && UNB[u]; if (!o) return null; if (!o.A) { o.A = aggregate(o.ks); o.m = Object.keys(o.bs).length; } return o; }
+  function locAgg(c) {
+    if (ULOC[c]) return ULOC[c];
+    var ks = [], m = 0; D.b.forEach(function (b) { if (b.c === c) { ks = ks.concat(b.k); m++; } });
+    return (ULOC[c] = { A: aggregate(ks), n: ks.length, m: m });
+  }
+  // The neighborhood the answer describes: the one searched for, else the one of the nearest in-locality kalpi.
+  function nbScope(near) {
+    if (!N || !near.length) return null;
+    var u = lastCtx.nb != null && N.n[lastCtx.nb] ? lastCtx.nb : null, how = "searched";
+    if (u == null) { how = "nearest"; for (var i = 0; i < near.length && u == null; i++) if (!near[i].out && near[i].d <= 1500) u = nbOf(near[i].b); } // a far kalpi's neighborhood says little about the address
+    var r = u != null && N.n[u]; if (!r) return null;
+    var g = nbAgg(u); if (!g || !g.A.valid) return null;
+    return { u: +u, r: r, how: how, name: r[2], city: r[1], A: g.A, n: g.ks.length, m: g.m };
+  }
+
+  // Horizontal bars: top 6 + hatched "אחרות" (always last), % and votes, optional national tick.
+  function partyBars(A, o) {
+    o = o || {};
+    if (!A.valid) return '<p class="meta">אין קולות כשרים בקלפי זו.</p>';
+    var top = A.parties.slice(0, 6), rest = A.parties.slice(6), rv = rest.reduce(function (s, p) { return s + p.v; }, 0);
+    var mx = o.fixed ? 1 : 0;
+    if (!o.fixed) { top.forEach(function (p) { mx = Math.max(mx, p.v / A.valid, o.nat && NAT ? NAT.share[p.code] || 0 : 0); }); mx = Math.max(mx, rv / A.valid); }
+    mx = mx || 1;
+    function row(cls, chip, name, code, title, v, nat) {
+      var s = v / A.valid;
+      return '<li class="pb' + cls + '" title="' + esc(title + ": " + pct(s) + " מהקולות הכשרים, " + fmt(v) + " קולות") + '"><span class="pb-name">' + chip + '<span class="nm">' + esc(name) + "</span>" +
+        (code ? '<span class="pb-code">' + esc(code) + "</span>" : "") + '</span><span class="pb-pct">' + bd(pct(s)) + '</span><span class="pb-votes">' + bd(fmt(v)) + "</span>" +
+        '<span class="pb-trk" aria-hidden="true"><span class="pb-fill" style="width:' + (s / mx * 100).toFixed(1) + "%;" + (cls ? "" : "background:" + chip.match(/background:([^"]+)/)[1]) + '"></span>' +
+        (nat ? '<span class="pb-nat" style="inset-inline-start:' + (nat / mx * 100).toFixed(1) + '%"></span>' : "") + "</span></li>";
+    }
+    var rows = top.map(function (p) {
+      return row("", '<i class="chip" style="background:' + color(p.code) + '"></i>', pname(p.name), p.code, p.full, p.v, o.nat && NAT ? NAT.share[p.code] : 0);
+    });
+    if (rv > 0) rows.push(row(" other", '<i class="chip other"></i>', "אחרות", "", rest.length + " רשימות נוספות", rv, 0));
+    var others = rv > 0 ? '<details class="others"><summary>מי ב"אחרות"? (' + rest.length + ")</summary><p>" + rest.map(function (p) { return esc(pname(p.name)) + " " + bd(pct(p.v / A.valid)); }).join(" · ") + "</p></details>" : "";
+    return '<ul class="pbars' + (o.compact ? " compact" : "") + '">' + rows.join("") + "</ul>" + (o.foot === false ? "" : '<p class="chart-foot">מתוך ' + bd(fmt(A.valid)) + " קולות כשרים" +
+      (o.nat ? ' · <span class="k-nat" aria-hidden="true"></span>קו = התוצאה הארצית' : "") + " · מקור: ועדת הבחירות המרכזית</p>") + others;
   }
 
   function render(near, label) {
-    var sc = lastCtx.scope === "nb" ? " (קודם כול בשכונה שחיפשתם, אחר כך ביישוב)" : lastCtx.scope === "loc" ? " ביישוב של הכתובת" : "";
-    var h = '<div class="meta" style="margin-bottom:8px">5 מקומות הקלפי הקרובים' + sc + " אל: " + esc(label) + "</div>" + nbHtml(near) + saHtml(near);
-    near.forEach(function (n, i) {
-      var b = n.b, a = b.agg;
-      h += '<article class="card"><h3><span class="num">' + (i + 1) + "</span>" + esc(b.v) + "</h3>" +
-        '<div class="meta">' + esc(b.a) + ", " + esc(b.t) + " · " + fmtDist(n.d) + (n.out ? " · מחוץ ליישוב" : "") + (N && lastNb && nbOf(b) === lastNb ? " · באותה שכונה" : "") + " · " +
-        (b.k.length === 1 ? "קלפי " + esc(b.k[0][1]) : b.k.length + " קלפיות (" + b.k.map(function (k) { return esc(k[1]); }).join(", ") + ")") + "</div>" +
-        statsHtml(a) + (b.k.length > 1 ? '<div class="meta">סך הכול במקום:</div>' : "") + barsHtml(a) + histHtml(b.k, a);
-      if (b.k.length > 1) {
-        h += "<details><summary>תוצאות לכל קלפי בנפרד</summary>" + b.k.map(function (k) {
-          var ka = aggregate([k]);
-          return '<div class="kalpi"><div class="kh">קלפי ' + esc(k[1]) + (k[5] ? " · נגישה" : "") + "</div>" + statsHtml(ka) + barsHtml(ka) + (b.k.length > 1 ? histHtml([k], ka) : "") + "</div>";
-        }).join("") + "</details>";
-      }
-      h += "</article>";
-    });
-    $("results").innerHTML = h;
+    var ks = flat(near), A5 = aggregate(ks), nb = nbScope(near), sc;
+    if (where && where.kalpi && near[0]) {
+      var kk = near[0].b.k.filter(function (k) { return String(k[1]) === String(where.kalpi); })[0];
+      if (kk) sc = { kind: "kalpi", place: where.kalpi, venue: near[0].b.v, A: aggregate([kk]), n: 1, m: 1 };
+    }
+    if (sc) {} else if (where && where.prec === "settlement" && where.c) { var la = locAgg(where.c); sc = { kind: "loc", place: where.cname || label.replace(/^מרכז /, ""), A: la.A, n: la.n, m: la.m }; }
+    else if (nb) sc = { kind: nb.how, place: nb.name, city: nb.city, A: nb.A, n: nb.n, m: nb.m };
+    else sc = { kind: "near", A: A5, n: ks.length, m: near.length };
+    lastNb = nb ? nb.u : null;
+    lastAnswer = answerText(sc);
+    var h = whereHtml(label) + answerHtml(sc) +
+      '<section class="lvl" aria-labelledby="pl-h"><h2 class="sec" id="pl-h">' + near.length + ' מקומות הקלפי הקרובים</h2><p class="sec-sub">ממוינים לפי מרחק בקו אוויר' +
+      (lastCtx.scope === "nb" ? ", קודם בשכונה שחיפשתם" : lastCtx.scope === "loc" ? ", מתוך היישוב בלבד" : "") + ". המספרים תואמים לסיכות במפה.</p>" + placesHtml(near) + "</section>" +
+      historyHtml(nb, ks, A5) + contextHtml(near, sc) + disclaimerHtml();
+    var R = $("results"); R.innerHTML = h; R.removeAttribute("aria-busy");
+    wireResults(R, near);
+    $("announce").textContent = "נמצאו " + near.length + " מקומות קלפי. " + lastAnswer;
+    if (scrollOnRender) {
+      scrollOnRender = false;
+      var tgt = R.querySelector(".where") || R;
+      if (mq.matches) sheet.scroller.scrollTo({ top: Math.max(0, tgt.offsetTop - 6), behavior: reduceMotion ? "auto" : "smooth" });
+      else if (R.getBoundingClientRect().top > window.innerHeight * 0.45) sheet.scroller.scrollTo({ top: tgt.offsetTop - 16, behavior: reduceMotion ? "auto" : "smooth" });
+    }
   }
+  var lastAnswer = "";
+
+  // Level 0: where we looked.
+  function whereHtml(label) {
+    var w = where || {}, b = BADGE[w.prec] || BADGE.manual;
+    return '<div class="where">' + (w.why ? '<p class="banner warn" role="note">' + esc(w.why) + "</p>" : "") +
+      '<p class="where-line"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16"><path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="10" r="2.6" fill="currentColor"/></svg><span class="where-label">' + esc(label) + "</span></p>" +
+      '<p class="where-meta"><span class="badge ' + b[1] + '" title="' + esc(b[2]) + '">' + (b[1] === "ok" ? "✓ " : b[1] === "warn" ? "⚠ " : "") + esc(b[0]) + "</span>" +
+      (w.src ? '<span class="src">מקור: <bdi>' + esc(srcName(w.src)) + "</bdi></span>" : "") +
+      (w.c && w.cname ? '<span class="src">קלפיות מתוך ' + esc(w.cname) + " בלבד</span>" : "") +
+      '<button type="button" class="linkish" id="moveLoc" aria-describedby="moveHint">שינוי מיקום</button><span id="moveHint" class="hint" hidden>גררו את הסיכה או לחצו על המפה</span></p></div>';
+  }
+
+  // Level 1: the answer card.
+  function chipName(p) { return '<b class="ln"><i class="chip" style="background:' + color(p.code) + '"></i>' + esc(pname(p.name)) + "</b>"; }
+  function scopeLead(sc) {
+    return sc.kind === "kalpi" ? "בקלפי <b>" + esc(sc.place) + "</b> ב" + esc(sc.venue) : sc.kind === "loc" ? "ב<b>" + esc(sc.place) + "</b>" : sc.kind === "searched" ? "בשכונת <b>" + esc(sc.place) + "</b>" :
+      sc.kind === "nearest" ? "בשכונת <b>" + esc(sc.place) + "</b>, שבה נמצאת הקלפי הקרובה," : "בקלפיות הקרובות לכתובת";
+  }
+  function isTie(A) { var t = A.parties; return t.length > 1 && (t[0].v - t[1].v) / A.valid * 100 < 1; }
+  function answerText(sc) {
+    var A = sc.A; if (!A.valid) return "";
+    var t = A.parties, tmp = document.createElement("div");
+    tmp.innerHTML = isTie(A) ? scopeLead(sc) + " שתי הרשימות הגדולות קיבלו כמעט אותו אחוז: " + esc(pname(t[0].name)) + " " + pct(t[0].v / A.valid) + " ו" + esc(pname(t[1].name)) + " " + pct(t[1].v / A.valid) + "."
+      : scopeLead(sc) + " הרשימה הגדולה הייתה " + esc(pname(t[0].name)) + ", עם " + pct(t[0].v / A.valid) + " מהקולות.";
+    return tmp.textContent;
+  }
+  function answerHtml(sc) {
+    var A = sc.A;
+    if (!A.valid) return '<article class="answer"><h2 class="answer-h">אין קולות כשרים בקלפיות הקרובות.</h2></article>';
+    var t = A.parties, tie = isTie(A), s = function (p) { return bd(pct(p.v / A.valid)); };
+    var head = tie ? scopeLead(sc) + " שתי הרשימות הגדולות קיבלו כמעט אותו אחוז: " + chipName(t[0]) + " " + s(t[0]) + " ו" + chipName(t[1]) + " " + s(t[1]) + "."
+      : scopeLead(sc) + " הרשימה הגדולה הייתה " + chipName(t[0]) + ", עם <span class=\"big-n\">" + s(t[0]) + "</span> מהקולות.";
+    var nx = t.slice(tie ? 2 : 1, tie ? 4 : 3).map(function (p) { return esc(pname(p.name)) + " " + s(p); });
+    var second = (nx.length ? "אחריה: " + nx.join(" · ") + " · " : "") + "אחוז הצבעה " + bd(pct(turnout(A)));
+    var unit = sc.kind === "kalpi" ? "" : sc.kind === "loc" ? "ביישוב" : sc.kind === "near" ? "הקרובים לכתובת" : "בשכונה · שכונות ועדת הבחירות";
+    var nto = NAT ? turnout(NAT) : 0;
+    var figs = '<dl class="figs">' +
+      "<div><dt>אחוז הצבעה</dt><dd>" + bd(pct(turnout(A))) + "<small>ארצי: " + bd(pct(nto)) + "</small></dd></div>" +
+      "<div><dt>בעלי זכות בחירה</dt><dd>" + bd(fmt(A.eligible)) + "</dd></div>" +
+      "<div><dt>קולות כשרים</dt><dd>" + bd(fmt(A.valid)) + "<small>פסולים: " + bd(fmt(A.invalid)) + "</small></dd></div>" +
+      "<div><dt>קלפיות</dt><dd>" + bd(fmt(sc.n)) + "<small>ב-" + bd(fmt(sc.m)) + " מקומות</small></dd></div></dl>";
+    var acts = '<div class="actions"><button type="button" class="act" data-act="copy"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>העתקת קישור</button>' +
+      (navigator.share ? '<button type="button" class="act" data-act="share"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16"><path d="M12 3v13M7 8l5-5 5 5M5 14v5h14v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>שיתוף</button>' : "") +
+      '<button type="button" class="act desk" data-act="cite">העתקת ציטוט</button><button type="button" class="act desk" data-act="print">הדפסה</button></div>';
+    return '<article class="answer" aria-labelledby="answer-h"><h2 class="answer-h" id="answer-h">' + head + '</h2><p class="answer-2">' + second + "</p>" +
+      partyBars(A, { nat: true }) + '<p class="scope">לפי ' + bd(fmt(sc.n)) + " קלפיות ב-" + bd(fmt(sc.m)) + " מקומות " + unit + "</p>" + figs + acts + "</article>";
+  }
+
+  // Level 2: the buildings, numbered like the map pins; collapsed by default.
+  function placesHtml(near) {
+    return '<ol class="places">' + near.map(function (n, i) {
+      var b = n.b, a = b.agg, to = a.eligible ? pct(a.voters / a.eligible) : "–";
+      var top2 = a.parties.slice(0, 2).map(function (p) { return esc(pname(p.name)) + " " + bd(pct(p.v / a.valid)); }).join(" · ");
+      var badges = (n.out ? '<span class="badge warn">מחוץ ליישוב</span>' : "") + (lastNb != null && nbOf(b) === lastNb ? '<span class="badge neutral">באותה שכונה</span>' : "");
+      var small = a.valid && a.valid < 100 ? '<p class="banner warn small">קלפי קטנה: אחוזים עלולים להשתנות מאוד בגלל מעט קולות.</p>' : "";
+      var rows = b.k.map(function (k) {
+        var ka = aggregate([k]), tp = ka.parties[0];
+        return '<tr data-k="' + esc(k[1]) + '"><th scope="row">' + esc(k[1]) + "</th><td>" + bd(fmt(k[2])) + "</td><td>" + bd(k[2] ? pct(k[3] / k[2]) : "–") + "</td><td>" +
+          (tp ? '<i class="chip" style="background:' + color(tp.code) + '"></i>' + esc(pname(tp.name)) + " " + bd(pct(tp.v / ka.valid)) : "–") + "</td><td>" + (k[5] ? '<span title="נגישה">♿ נגישה</span>' : "") +
+          '</td><td><button type="button" class="klink" data-kalpi="' + b.c + "-" + esc(k[1]) + '" aria-label="העתקת קישור לקלפי ' + esc(k[1]) + '">🔗</button></td></tr>';
+      }).join("");
+      var perKalpi = b.k.length > 1 ? "<details><summary>תוצאות מלאות לכל קלפי</summary>" + b.k.map(function (k) {
+        var ka = aggregate([k]);
+        return '<div class="kalpi"><div class="kh">קלפי ' + esc(k[1]) + (k[5] ? " · ♿ נגישה" : "") + "</div>" + statsHtml(ka) + partyBars(ka, { fixed: true, compact: true, foot: false }) + histHtml([k], ka) + "</div>";
+      }).join("") + "</details>" : "";
+      return '<li class="place" id="place-' + i + '" data-i="' + i + '"><details' + (openPlace === i ? " open" : "") + '><summary><span class="num" aria-hidden="true">' + (i + 1) + '</span><span class="ph"><span class="pv">' + esc(b.v) +
+        '</span><span class="pm">' + esc(b.a) + ", " + esc(b.t) + ' · <span class="dist">' + fmtDist(n.d) + "</span> · " + (b.k.length === 1 ? "קלפי " + esc(b.k[0][1]) : b.k.length + " קלפיות") + "</span>" +
+        '<span class="pt">' + top2 + " · הצבעה " + bd(to) + "</span>" + (badges ? '<span class="pbadges">' + badges + "</span>" : "") + "</span></summary>" +
+        '<div class="pbody">' + statsHtml(a) + small + partyBars(a, { compact: true }) +
+        '<table class="kt"><caption class="sr-only">קלפיות במקום</caption><thead><tr><th scope="col">קלפי</th><th scope="col">בעלי זכות</th><th scope="col">הצבעה</th><th scope="col">הרשימה הגדולה</th><th scope="col"><span class="sr-only">נגישות</span></th><th scope="col"><span class="sr-only">קישור</span></th></tr></thead><tbody>' + rows + "</tbody></table>" +
+        perKalpi + histHtml(b.k, a) + '<p class="pact"><button type="button" class="tomap" data-i="' + i + '">הצגה במפה</button></p></div></details></li>';
+    }).join("") + "</ol>";
+  }
+
+  // Level 3: history. Neighborhood series when known, else the same kalpiot via the K25/K24 crosswalk.
+  function series(nb, ks, A5) {
+    if (!H && !nb) return null;
+    var now = {}, s25, s24, q25 = 0, n25, n24, src;
+    if (nb) {
+      now = nbShares(nb.r, 3); s25 = nbShares(nb.r, 5, N.p25); s24 = nbShares(nb.r, 7, N.p24);
+      n25 = N.p25.reduce(function (o, p) { o[pname(p[1])] = 1; return o; }, {}); n24 = N.p24.reduce(function (o, p) { o[pname(p[1])] = 1; return o; }, {});
+      src = "nb";
+    } else {
+      A5.parties.forEach(function (p) { var n = pname(p.name); now[n] = (now[n] || 0) + p.v / (A5.valid || 1); });
+      var p25 = past(ks, "25"), p24 = past(ks, "24");
+      s25 = p25.sh; s24 = p24.sh; q25 = p25.q; n25 = p25.names || {}; n24 = p24.names || {}; src = "k";
+    }
+    if (!now) return null;
+    var names = Object.keys(now).filter(function (n) {
+      return (n25[n] || n24[n]) && Math.max(now[n] || 0, s25 && n25[n] ? s25[n] || 0 : 0, s24 && n24[n] ? s24[n] || 0 : 0) >= 0.02;
+    }).sort(function (a, b) { return now[b] - now[a] || (a < b ? -1 : 1); }).slice(0, 8);
+    return { now: now, s25: s25, s24: s24, n25: n25, n24: n24, q: q25, src: src, names: names };
+  }
+  function historyHtml(nb, ks, A5) {
+    if (!H) return '<section class="lvl"><h2 class="sec">השוואה ל-2022 ול-2021</h2>' + histWait("p") + '</section>';
+    var S5 = series(nb, ks, A5);
+    if (!S5 || !S5.s25 && !S5.s24) return '<section class="lvl"><h2 class="sec">השוואה ל-2022 ול-2021</h2><p class="meta"><span class="badge neutral">קלפי או יישוב חדשים</span> אין נתונים מבחירות קודמות למקום הזה.</p></section>';
+    var badge = S5.src === "nb" ? '<span class="badge neutral" title="2022 ו-2021 לפי חלוקת השכונות של ועדת הבחירות, באחוזים בלבד.">נתוני ועדת הבחירות לשכונה</span>'
+      : S5.q >= 2 ? '<span class="badge warn" title="אין קלפי מקבילה מדויקת; ההשוואה לפי מקום הקלפי הקרוב ב-2022.">⚠ השוואה משוערת</span>'
+      : '<span class="badge ok" title="הקלפי שויכה לקלפי או למקום הקלפי המקביל ב-2022.">✓ השוואה אמינה</span>';
+    var top22 = S5.s25 && Object.keys(S5.s25).sort(function (a, b) { return S5.s25[b] - S5.s25[a]; })[0];
+    var line22 = top22 ? '<p class="hist-22">ב-2022 הרשימה הגדולה כאן הייתה <b>' + esc(top22) + "</b> עם " + bd(pct(S5.s25[top22])) + ".</p>" : "";
+    var who = S5.src === "nb" ? "בשכונת " + esc(nb.name) : "באותן קלפיות";
+    return '<section class="lvl" aria-labelledby="hist-h"><details class="fold" id="history"' + (mq.matches ? "" : " open") + '><summary><h2 class="sec" id="hist-h">השוואה ל-2022 ול-2021</h2>' + badge + "</summary>" +
+      '<p class="sec-sub">' + who + ", לפי שם הרשימה, באחוזים מהקולות הכשרים. רשימות שהתאחדו, התפצלו או שינו שם אינן מושוות.</p>" + line22 +
+      '<div class="viewtabs" role="group" aria-label="תצוגה"><button type="button" aria-pressed="true" data-view="dots">נקודות</button><button type="button" aria-pressed="false" data-view="mult">שלוש שנים</button><button type="button" aria-pressed="false" data-view="table">טבלה</button></div>' +
+      '<div class="view" data-v="dots">' + dotPlot(S5) + '</div><div class="view" data-v="mult" hidden>' + multiples(S5) + '</div><div class="view" data-v="table" hidden>' + histTable(S5) + "</div>" +
+      '<p class="chart-foot">מקור: ועדת הבחירות המרכזית' + (S5.src === "nb" ? " (שכונות)" : "") + '. <a href="#method-history">איך משווים?</a></p></details></section>';
+  }
+  function val(S5, y, n) { var sh = y === 25 ? S5.s25 : S5.s24, nm = y === 25 ? S5.n25 : S5.n24; return !sh ? undefined : !nm[n] ? null : sh[n] || 0; }
+  function dotPlot(S5) {
+    var mx = 0; S5.names.forEach(function (n) { [S5.now[n], val(S5, 25, n), val(S5, 24, n)].forEach(function (v) { if (v) mx = Math.max(mx, v); }); });
+    mx = Math.min(1, Math.ceil(mx * 10) / 10) || 1;
+    var ticks = []; for (var t = 0; t <= mx + 1e-9; t += mx > 0.5 ? 0.2 : 0.1) ticks.push(t);
+    var rows = S5.names.map(function (n) {
+      var v26 = S5.now[n], v25 = val(S5, 25, n), v24 = val(S5, 24, n), xs = [v26].concat(v25 != null ? [v25] : [], v24 != null ? [v24] : []);
+      var lo = Math.min.apply(null, xs), hi = Math.max.apply(null, xs), P_ = function (v) { return (v / mx * 100).toFixed(2) + "%"; };
+      var d = v25 != null ? pts((v26 - v25) * 100) : "—";
+      var tip = "2026: " + pct(v26) + " · 2022: " + (v25 == null ? "לא התמודדה בשם זה" : pct(v25)) + " · 2021: " + (v24 == null ? "לא התמודדה בשם זה" : pct(v24));
+      return '<li class="dp" title="' + esc(tip) + '"><span class="dp-name"><i class="chip" style="background:' + colorByName(n) + '"></i>' + esc(n) + '</span><span class="dp-trk" aria-hidden="true">' +
+        '<span class="dp-line" style="inset-inline-start:' + P_(lo) + ";width:" + ((hi - lo) / mx * 100).toFixed(2) + '%"></span>' +
+        (v24 != null ? '<span class="dot d24" style="inset-inline-start:' + P_(v24) + '"></span>' : "") + (v25 != null ? '<span class="dot d22" style="inset-inline-start:' + P_(v25) + '"></span>' : "") +
+        '<span class="dot d26" style="inset-inline-start:' + P_(v26) + ";background:" + colorByName(n) + '"></span></span><span class="dp-v">' + bd(pct(v26)) + '</span><span class="dp-d">' + bd(d) + '</span><span class="sr-only">' + esc(tip) + "</span></li>";
+    }).join("");
+    return '<div class="dplot"><p class="dp-key"><span><span class="dot d24"></span>2021</span><span><span class="dot d22"></span>2022</span><span><span class="dot d26 key"></span>2026</span><span class="dp-key-d">שינוי מ-2022</span></p><ul>' + rows +
+      '</ul><div class="dp-axis" aria-hidden="true">' + ticks.map(function (t) { return '<span style="inset-inline-start:' + (t / mx * 100).toFixed(2) + '%">' + Math.round(t * 100) + "%</span>"; }).join("") + "</div></div>";
+  }
+  function histTable(S5) {
+    function cell(y, n) { var v = val(S5, y, n); return v === undefined ? "<td>—</td>" : v === null ? '<td class="na" title="לא התמודדה בשם זה">—</td>' : "<td>" + bd(pct(v)) + "</td>"; }
+    return '<table class="cmp"><thead><tr><th scope="col">רשימה</th><th scope="col">2026</th><th scope="col">2022</th><th scope="col">שינוי (נק\')</th><th scope="col">2021</th></tr></thead><tbody>' + S5.names.map(function (n) {
+      var v25 = val(S5, 25, n);
+      return '<tr><th scope="row"><i class="chip" style="background:' + colorByName(n) + '"></i>' + esc(n) + "</th><td>" + bd(pct(S5.now[n])) + "</td>" + cell(25, n) + '<td class="d">' + (v25 != null ? bd(pts((S5.now[n] - v25) * 100)) : "") + "</td>" + cell(24, n) + "</tr>";
+    }).join("") + "</tbody></table>";
+  }
+  // Small multiples: each year's own top 6 on one shared scale.
+  function multiples(S5) {
+    var cols = [["2021", "הכנסת ה-24", S5.s24], ["2022", "הכנסת ה-25", S5.s25], ["2026", "הכנסת ה-26", S5.now]];
+    var mx = 0; cols.forEach(function (c) { if (c[2]) Object.keys(c[2]).forEach(function (n) { mx = Math.max(mx, c[2][n]); }); });
+    mx = mx || 1;
+    return '<div class="mult">' + cols.map(function (c, ci) {
+      var body = !c[2] ? '<p class="mnote">אין נתונים</p>' : Object.keys(c[2]).sort(function (a, b) { return c[2][b] - c[2][a]; }).slice(0, 6).map(function (n) {
+        var col = colorByName(n), v = c[2][n];
+        return '<div class="mrow"><div class="ml"><span><i class="chip" style="background:' + col + '"></i>' + esc(n) + "</span><b>" + bd(pct(v)) + '</b></div><div class="mt" aria-hidden="true"><span class="mf" style="width:' + (v / mx * 100).toFixed(1) + "%;background:" + col + '"></span></div></div>';
+      }).join("");
+      return '<section class="mcol' + (ci === 2 ? " now" : "") + '" aria-label="' + c[0] + '"><h3>' + c[0] + '</h3><p class="msub">' + c[1] + "</p>" + body + "</section>";
+    }).join("") + "</div>";
+  }
+
+  // Level 4: context (turnout here / locality / national, CBS area and SES strip).
+  function contextHtml(near, sc) {
+    if (!near.length) return "";
+    var c = near[0].b.c, la = locAgg(c), lname = near[0].b.t;
+    var rows = [["כאן", turnout(sc.A)], ["ב" + lname, turnout(la.A)], ["ארצי", NAT ? turnout(NAT) : 0]];
+    var tb = '<ul class="tbars">' + rows.map(function (r) { return '<li><span class="tl">' + esc(r[0]) + '</span><span class="tt" aria-hidden="true"><span style="width:' + (r[1] * 100).toFixed(1) + '%"></span></span><span class="tv">' + bd(pct(r[1])) + "</span></li>"; }).join("") + "</ul>";
+    var sa = "";
+    var code = S ? saCode(near[0].b) : null, r = code && S.sa[code];
+    if (r) {
+      var strip = '<div class="ses-strip" aria-hidden="true">' + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(function (i) { return '<i class="' + (i === r[2] ? "on" : "") + '" style="background:' + sesColor(i) + '"></i>'; }).join("") + "</div>";
+      sa = '<h3 class="ctx-h">האזור הסטטיסטי של הקלפי הקרובה</h3><p class="meta">' + esc(saName(code)) + "</p>" + strip +
+        '<p class="ses-v">' + (r[2] ? "אשכול <b>" + r[2] + "</b> מתוך 10" : "אשכול לא ידוע") + (r[5] ? " (ברמת היישוב)" : "") + '<span class="meta"> · 1 הנמוך ביותר · מקור: הלמ"ס, 2021</span></p>';
+    }
+    return '<section class="lvl" aria-labelledby="ctx-h"><details class="fold"><summary><h2 class="sec" id="ctx-h">הקשר: אחוז הצבעה ואשכול חברתי-כלכלי</h2></summary>' +
+      '<h3 class="ctx-h">אחוז הצבעה</h3>' + tb + sa +
+      '<p class="meta">אזור סטטיסטי ושכונה הם שתי חלוקות שונות; המספרים לא אמורים להיות זהים. השכונה נקבעת לפי מיקום הקלפיות, לא לפי מקום המגורים.</p></details></section>';
+  }
+
+  // Level 5: disclaimer and timestamp.
+  function disclaimerHtml() {
+    return '<aside class="disclaimer" aria-label="הבהרה"><p><b>אתר עצמאי ולא רשמי.</b> ההצבעה חשאית: התוצאות הן ברמת הקלפי ואינן מלמדות על אדם או על בניין מסוים. כל בוחר משובץ לקלפי לפי הכתובת הרשומה, לא לפי קרבה, לכן הקלפי הקרובה היא לא בהכרח שלכם. ' +
+      '<a href="https://www.gov.il/apps/moin/bocharim/" target="_blank" rel="noopener">בדיקת הקלפי שלכם באתר הרשמי</a> · <a href="#method">איך זה עובד</a></p><p class="ts">' + esc(TS) + "</p></aside>";
+  }
+
+  function wireResults(R, near) {
+    Array.prototype.forEach.call(R.querySelectorAll(".tomap"), function (b) {
+      b.addEventListener("click", function () { focusPin(+b.getAttribute("data-i"), true); });
+    });
+    Array.prototype.forEach.call(R.querySelectorAll(".place"), function (li) {
+      var i = +li.getAttribute("data-i");
+      li.addEventListener("mouseenter", function () { hiPin(i, true); }); li.addEventListener("mouseleave", function () { hiPin(i, false); });
+      li.addEventListener("focusin", function () { hiPin(i, true); }); li.addEventListener("focusout", function () { hiPin(i, false); });
+      li.querySelector("details").addEventListener("toggle", function (e) { if (e.target.open) openPlace = i; else if (openPlace === i) openPlace = -1; });
+    });
+    Array.prototype.forEach.call(R.querySelectorAll(".viewtabs button"), function (b) {
+      b.addEventListener("click", function () {
+        var box = b.closest("details");
+        Array.prototype.forEach.call(box.querySelectorAll(".viewtabs button"), function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+        Array.prototype.forEach.call(box.querySelectorAll(".view"), function (v) { v.hidden = v.getAttribute("data-v") !== b.getAttribute("data-view"); });
+      });
+    });
+    Array.prototype.forEach.call(R.querySelectorAll("[data-act]"), function (b) { b.addEventListener("click", function () { act(b.getAttribute("data-act")); }); });
+    Array.prototype.forEach.call(R.querySelectorAll(".klink"), function (b) {
+      b.addEventListener("click", function () { copyText(location.origin + location.pathname + "?kalpi=" + encodeURIComponent(b.getAttribute("data-kalpi")), "הקישור הועתק"); });
+    });
+    var mv = $("moveLoc"); if (mv) mv.addEventListener("click", function () { var h = $("moveHint"); h.hidden = false; if (mq.matches) sheet.set("peek"); if (marker) marker.openTooltip(); });
+    if (where && where.kalpi) { var pk = where.kalpi; var li = $("place-0"); if (li) { li.querySelector("details").open = true; openPlace = 0; var tr = li.querySelector('tr[data-k="' + CSS.escape(pk) + '"]'); if (tr) tr.classList.add("hi"); } }
+  }
+  var pendingKalpi = null;
+  function hiPin(i, on) { var m = nearMarkers[i], el = m && m.getElement && m.getElement(); if (el) el.classList.toggle("hi", on); if (m && on) m.setZIndexOffset(900); else if (m) m.setZIndexOffset(0); }
+  function focusPin(i, popup) {
+    var m = nearMarkers[i]; if (!m) return;
+    if (mq.matches) sheet.set("peek");
+    var ll = m.getLatLng(), z = Math.max(map.getZoom(), 16);
+    if (reduceMotion) map.setView(ll, z); else map.flyTo(ll, z, { duration: 0.8 });
+    if (popup) map.once("moveend", function () { m.openPopup(); });
+  }
+  function openCard(i) {
+    var li = $("place-" + i); if (!li) return;
+    li.querySelector("details").open = true; openPlace = i;
+    if (mq.matches && sheet.state !== "full") sheet.set("half");
+    setTimeout(function () { sheet.scroller.scrollTo({ top: li.offsetTop - 12, behavior: reduceMotion ? "auto" : "smooth" }); li.querySelector("summary").focus({ preventScroll: true }); }, mq.matches ? 380 : 0);
+  }
+
+  // Copy link / share / citation / print.
+  function toast(t) {
+    var el = $("toast"); el.textContent = t; el.classList.add("on");
+    clearTimeout(toast.t); toast.t = setTimeout(function () { el.classList.remove("on"); }, 2000);
+  }
+  function copyText(t, ok) {
+    function fallback() { var i = document.createElement("textarea"); i.value = t; i.setAttribute("readonly", ""); i.style.position = "fixed"; i.style.opacity = "0"; document.body.appendChild(i); i.select(); try { document.execCommand("copy"); toast(ok); } catch (e) { toast("לא הצלחנו להעתיק"); } i.remove(); }
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).then(function () { toast(ok); }, fallback); else fallback();
+  }
+  function act(a) {
+    var url = location.href;
+    if (a === "copy") copyText(url, "הקישור הועתק");
+    else if (a === "share" && navigator.share) navigator.share({ title: document.title, text: lastAnswer, url: url }).catch(function () {});
+    else if (a === "cite") copyText('"' + lastAnswer + '" מקור: ועדת הבחירות המרכזית, ' + TS.replace(/\.$/, "") + "; עיבוד: מפת הקלפיות " + url, "הציטוט הועתק");
+    else if (a === "print") window.print();
+    else if (a === "retry-extras") { extrasErr = false; if (lastNear) render(lastNear, lastLabel); var nr = lastNear; extras().then(function () { if (lastNear === nr && H) render(nr, lastLabel); }); }
+  }
+
+  // Empty state: national facts (regular ballot boxes only) and how to start.
+  function renderEmpty() {
+    if (!NAT || !NAT.valid) return;
+    var nk = D.b.reduce(function (s, b) { return s + b.k.length; }, 0);
+    $("results").innerHTML = '<div class="empty"><section class="answer national" aria-labelledby="nat-h"><h2 class="sec" id="nat-h">בכל הארץ</h2><p class="nat-facts">אחוז הצבעה <b>' + bd(pct(turnout(NAT))) + "</b> · " + bd(fmt(nk)) + " קלפיות ב-" + bd(fmt(D.b.length)) + " מקומות</p>" +
+      partyBars(NAT, {}) + '<p class="meta">בקלפיות הרגילות, לא כולל מעטפות כפולות. <a href="#method">איך זה עובד</a></p></section>' +
+      '<section class="explore"><h2 class="sec">גלו במפה</h2><div class="explore-btns"><button type="button" class="ghost" data-layer="nb:winner">הרשימה הגדולה בכל שכונה</button><button type="button" class="ghost" data-layer="nb:turnout">אחוז הצבעה לפי שכונה</button></div></section>' +
+      '<h2 class="sec">איך זה עובד</h2><ol class="steps"><li>מקלידים רחוב, מספר ויישוב, או לוחצים על המפה.</li><li>מוצגים 5 מקומות הקלפי הקרובים ביישוב, עם התוצאות של כל קלפי.</li><li>משווים ל-2022 ול-2021, לשכונה ולאזור הסטטיסטי.</li></ol>' + disclaimerHtml() + "</div>";
+    $("announce").textContent = "";
+    Array.prototype.forEach.call($("results").querySelectorAll("[data-layer]"), function (b) {
+      b.addEventListener("click", function () { $("layer").value = b.getAttribute("data-layer"); setLayer(b.getAttribute("data-layer")); if (mq.matches) sheet.set("peek"); });
+    });
+  }
+
 
   // ---------- v2: history (K25/K24) and statistical areas, lazy-loaded ----------
   var H = null, S = null, N = null, extrasP = null, lastNear = null, lastLabel = "", lastCtx = {}, lastNb = null;
   function extras() {
     if (!extrasP) extrasP = Promise.all([
-      fetch("data/hist.json").then(function (r) { return r.json(); }),
-      fetch("data/sa.json").then(function (r) { return r.json(); }),
-      fetch("data/nb.json").then(function (r) { return r.json(); })
-    ]).then(function (a) { H = a[0]; S = a[1]; N = a[2]; }).catch(function () { extrasP = null; });
+      fetch("data/hist.json").then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }),
+      fetch("data/sa.json").then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }),
+      fetch("data/nb.json").then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    ]).then(function (a) { H = a[0]; S = a[1]; N = a[2]; extrasErr = false; },
+      function () { extrasP = null; extrasErr = true; if (lastNear) render(lastNear, lastLabel); });
     return extrasP;
+  }
+  var extrasErr = false;
+  function histWait(tag) { // "loading" while the comparison data loads; an error line with a retry when it failed
+    return extrasErr ? '<' + tag + ' class="meta hist-err" role="status">לא הצלחנו לטעון את ההשוואה לבחירות קודמות. <button type="button" class="linkish" data-act="retry-extras">נסו שוב</button></' + tag + '>'
+      : '<' + tag + ' class="meta hist-wait">טוענים השוואה לבחירות קודמות…</' + tag + '>';
   }
   // ---- CEC neighborhoods (polygons = the kalpiot whose polling location lies inside; K26 recomputed from our data) ----
   function nbOf(b) { if (!N) return null; for (var i = 0; i < b.k.length; i++) { var u = N.k[b.k[i][0]]; if (u) return u; } return null; }
@@ -166,26 +587,6 @@
     var valid = r[col], vec = r[col + 1], sh = {}; if (!valid) return null;
     for (var i = 0; i < vec.length; i += 2) { var nm = pname(plist ? plist[vec[i]][1] : P[vec[i]][1]); sh[nm] = (sh[nm] || 0) + vec[i + 1] / valid; }
     return sh;
-  }
-  function nbHtml(near) {
-    lastNb = null;
-    if (!N || !near.length) return "";
-    var u = lastCtx.nb != null && N.n[lastCtx.nb] ? lastCtx.nb : null, how = "השכונה שחיפשתם";
-    if (!u) { for (var i = 0; i < near.length && !u; i++) if (!near[i].out) u = nbOf(near[i].b); how = "לפי הקלפי הקרובה ביישוב"; }
-    var r = u && N.n[u]; if (!r) return "";
-    lastNb = +u;
-    var now = nbShares(r, 3), s25 = nbShares(r, 5, N.p25), s24 = nbShares(r, 7, N.p24);
-    var n25 = N.p25.reduce(function (o, p) { o[pname(p[1])] = 1; return o; }, {}), n24 = N.p24.reduce(function (o, p) { o[pname(p[1])] = 1; return o; }, {});
-    var names = Object.keys(now || {}).filter(function (n) { return now[n] >= 0.02; }).sort(function (a, b) { return now[b] - now[a]; }).slice(0, 8);
-    var code = {}; P.forEach(function (p) { code[pname(p[1])] = p[0]; });
-    function cell(sh, nm, n) { if (!sh) return "<td>—</td>"; if (!nm[n]) return '<td class="na" title="לא התמודדה בשם זה">—</td>'; return "<td>" + pct(sh[n] || 0) + "</td>"; }
-    var t = now ? '<table class="cmp"><thead><tr><th>רשימה</th><th>2026</th><th>2022</th><th>שינוי</th><th>2021</th></tr></thead><tbody>' + names.map(function (n) {
-      var d = s25 && n25[n] ? ((now[n] - (s25[n] || 0)) * 100) : null;
-      return '<tr><td><span class="sw" style="background:' + color(code[n]) + '"></span>' + esc(n) + "</td><td>" + pct(now[n]) + "</td>" + cell(s25, n25, n) +
-        '<td class="d">' + (d === null ? "" : (d > 0 ? "+" : "") + d.toFixed(1)) + "</td>" + cell(s24, n24, n) + "</tr>";
-    }).join("") + "</tbody></table>" : '<div class="meta">אין קלפי של 2026 בשכונה זו.</div>';
-    return '<div class="card sa nb"><h3>השכונה: ' + esc(r[2]) + ", " + esc(r[1]) + '</h3><div class="meta">' + how + " · " + fmt(r[3]) + " קולות כשרים ב-2026 · שכונות ועדת הבחירות</div>" + t +
-      '<div class="meta">אחוזים בלבד. 2022/2021 מקבצי השכונות של ועדת הבחירות לאותה שכונה; "—" = לא התמודדה באותו שם. השכונה נקבעת לפי מיקום הקלפיות, לא לפי מקום המגורים.</div></div>';
   }
   function pname(n) { return n.replace(/\s*\(לא התמודדה\)$/, ""); }
   var YEARS = [["25", "2022"], ["24", "2021"]];
@@ -211,7 +612,7 @@
     return { q: q, sh: sh, names: E.names || (E.names = E.parties.reduce(function (o, p) { o[p[1]] = 1; return o; }, {})) };
   }
   function histHtml(ks, a) {
-    if (!H) return '<div class="meta hist-wait">טוען השוואה לבחירות קודמות…</div>';
+    if (!H) return histWait("div");
     var now = {}; a.parties.forEach(function (p) { now[pname(p.name)] = { s: p.v / a.valid, code: p.code }; });
     var ys = YEARS.map(function (y) { return past(ks, y[0]); });
     if (!ys[0].sh) return '<div class="meta">השוואה ל-2022: ' + QUAL[3] + ".</div>";
@@ -234,21 +635,33 @@
   }
   function saCode(b) { if (!S) return null; for (var i = 0; i < b.k.length; i++) { var c = S.k[b.k[i][0]]; if (c) return c; } return null; }
   function saName(c) { var r = S.sa[c]; return r ? r[0] + (r[1] ? ", " + r[1] : " · אזור סטטיסטי " + (c % 10000)) : "אזור " + c; }
-  function saHtml(near) {
-    if (!S || !near.length) return "";
-    var c = saCode(near[0].b), r = c && S.sa[c];
-    if (!r) return "";
-    var top = [];
-    for (var i = 0; i < r[4].length && top.length < 3; i += 2) top.push(esc(pname(P[r[4][i]][1])) + " " + pct(r[4][i + 1] / r[3]));
-    return '<div class="card sa"><h3>האזור הסטטיסטי (למ"ס)</h3><div class="meta">' + esc(saName(c)) + " · לפי הקלפי הקרובה</div>" +
-      '<div class="stats"><span>אשכול חברתי-כלכלי: <b>' + (r[2] || "?") + "</b> מתוך 10" + (r[5] ? " (ברמת היישוב)" : "") + "</span>" +
-      (r[3] ? "<span>מובילות באזור ב-2026: " + top.join(" · ") + "</span>" : "<span>אין קלפי באזור זה</span>") + "</div>" +
-      '<div class="meta">1 = הנמוך ביותר, 10 = הגבוה ביותר (מדד הלמ"ס, 2021).</div></div>';
-  }
-
   // Choropleth layers, loaded on first use. Mode: "off" | "<src>:winner" | "<src>:p:<partyIdx>" | "sa:ses"; src = nb (CEC neighborhoods) or sa (CBS statistical areas).
   var layers = {}, layerP = {}, mode = "off", cur = null;
-  function sesColor(c) { var s = ["#b2182b", "#d6604d", "#f4a582", "#fddbc7", "#f7f7f7", "#d1e5f0", "#92c5de", "#4393c3", "#2166ac", "#053061"]; return c ? s[c - 1] : "#ccc"; }
+  // SES: one sequential teal hue (red/blue read as political in Israel).
+  function sesColor(c) { var s = ["#e0f3f1", "#c2e4e1", "#a3d5d1", "#85c6c1", "#67b6b0", "#4aa6a0", "#2f958f", "#1a837e", "#0b6e6b", "#00585a"]; return c ? s[c - 1] : "#d9d9d9"; }
+  var TURN_C = ["#f1eef6", "#c9c3d6", "#9a95b3", "#625f80", "#2b2d42"], SHARE_O = [0.12, 0.3, 0.48, 0.66, 0.85], BRK = null, USA = null;
+  function saUnits() {
+    if (USA || !S) return USA; USA = {};
+    D.b.forEach(function (b) { b.k.forEach(function (k) { var c = S.k[k[0]]; if (c) (USA[c] || (USA[c] = [])).push(k); }); });
+    Object.keys(USA).forEach(function (c) { USA[c] = aggregate(USA[c]); });
+    return USA;
+  }
+  function unitTurnout(src, f) { var A = src === "sa" ? (saUnits() || {})[f.properties.c] : (nbAgg(f.properties.u) || {}).A; return A && A.eligible ? A.voters / A.eligible : null; }
+  function cls(v, br) { var i = 0; while (i < br.length && v >= br[i]) i++; return i; }
+  function computeBreaks(src, m) {
+    var g = layers[src], vals = [];
+    g.eachLayer(function (l) {
+      var f = l.feature, x;
+      if (m === "turnout") { x = unitTurnout(src, f); if (x != null) vals.push(x); }
+      else if (m.slice(0, 2) === "p:") { x = rowOf(src, f); if (x && x[0]) vals.push(shareIn(x, +m.slice(2))); }
+    });
+    vals.sort(function (a, b) { return a - b; });
+    if (!vals.length) return null;
+    var q = function (p) { return vals[Math.min(vals.length - 1, Math.floor(p * vals.length))]; };
+    if (m === "turnout") return [q(0.2), q(0.4), q(0.6), q(0.8)];
+    var top = Math.max(q(0.95), 0.01); return [0.2, 0.4, 0.6, 0.8].map(function (t) { return top * t; });
+  }
+  function shareIn(x, pi) { for (var i = 0; i < x[1].length; i += 2) if (x[1][i] === pi) return x[1][i + 1] / x[0]; return 0; }
   function topoToGeo(t) { // TopoJSON (quantized, EPSG:3857) -> GeoJSON in WGS84
     var sx = t.transform.scale[0], sy = t.transform.scale[1], tx = t.transform.translate[0], ty = t.transform.translate[1];
     var arcs = t.arcs.map(function (a) { var x = 0, y = 0; return a.map(function (d) { x += d[0]; y += d[1]; var ll = merc2ll(x * sx + tx, y * sy + ty); return [ll[1], ll[0]]; }); });
@@ -261,14 +674,14 @@
   // row -> [valid, [pidx, votes...]] for K26
   function rowOf(src, f) { if (src === "sa") { var r = S.sa[f.properties.c]; return r && [r[3], r[4], r]; } var n = N.n[f.properties.u]; return n && [n[3], n[4], n]; }
   function style(f) {
-    var src = mode.split(":")[0], m = mode.slice(src.length + 1), x = rowOf(src, f), st = { weight: 0.5, color: "#555", fillOpacity: 0.55, renderer: renderer };
-    if (m === "ses") { st.fillColor = x ? sesColor(x[2][2]) : "#ccc"; return st; }
-    if (!x || !x[0]) return Object.assign(st, { fillColor: "#bbb", fillOpacity: 0.15, dashArray: "2 3" });
+    var src = mode.split(":")[0], m = mode.slice(src.length + 1), x = rowOf(src, f), st = { weight: 0.5, color: "#fff", fillOpacity: 0.62, renderer: renderer };
+    if (m === "ses") { st.fillColor = x ? sesColor(x[2][2]) : "#d9d9d9"; st.fillOpacity = 0.7; return st; }
+    if (m === "turnout") { var tv = unitTurnout(src, f); if (tv == null) return Object.assign(st, { fillColor: "#d9d9d9", fillOpacity: 0.15, dashArray: "2 3", color: "#999" }); st.fillColor = TURN_C[cls(tv, BRK || [])]; st.fillOpacity = 0.7; return st; }
+    if (!x || !x[0]) return Object.assign(st, { fillColor: "#d9d9d9", fillOpacity: 0.15, dashArray: "2 3", color: "#999" });
     if (m === "winner") st.fillColor = color(P[x[1][0]][0]);
     else {
-      var pi = +m.slice(2), v = 0;
-      for (var i = 0; i < x[1].length; i += 2) if (x[1][i] === pi) v = x[1][i + 1];
-      st.fillColor = color(P[pi][0]); st.fillOpacity = Math.min(0.9, 0.05 + v / x[0] * 1.6);
+      var pi = +m.slice(2);
+      st.fillColor = color(P[pi][0]); st.fillOpacity = SHARE_O[cls(shareIn(x, pi), BRK || [])];
     }
     return st;
   }
@@ -288,28 +701,47 @@
     });
     return layerP[src];
   }
-  function setLayer(m) {
-    mode = m;
+  function setLayer(m, noUrl) {
+    mode = m; dotColors(); if (!noUrl) setUrl(null, false);
     if (cur) { cur.remove(); cur = null; }
     if (m === "off") return legend();
     var src = m.split(":")[0];
-    status("טוען שכבה…");
-    load(src).then(function () { if (mode !== m) return; cur = layers[src]; cur.setStyle(style); cur.addTo(map); cur.bringToBack(); status(""); legend(); },
-      function () { layerP[src] = null; status("טעינת השכבה נכשלה."); });
+    $("legend").textContent = "טוענים את השכבה…";
+    load(src).then(function () {
+      if (mode !== m) return; var mm = m.slice(src.length + 1); BRK = mm === "turnout" || mm.slice(0, 2) === "p:" ? computeBreaks(src, mm) : null;
+      cur = layers[src]; cur.setStyle(style); cur.addTo(map); cur.bringToBack(); legend();
+    }, function () { layerP[src] = null; toast("לא הצלחנו לטעון את השכבה."); mode = "off"; $("layer").value = "off"; legend(); dotColors(); setUrl(null, false); });
   }
   function legend() {
     var el = $("legend"); if (mode === "off") { el.innerHTML = ""; return; }
+    var brk = function (fmtv, cols, op) { return '<span class="lg-steps">' + cols.map(function (c, i) { var lo = i ? BRK[i - 1] : 0; return '<span><i style="background:' + c + (op ? ";opacity:" + op[i] : "") + '"></i>' + (i ? fmtv(lo) + "+" : "&lt;" + fmtv(BRK[0])) + "</span>"; }).join("") + "</span>"; };
+    var f0 = function (v) { return Math.round(v * 100) + "%"; };
     var src = mode.split(":")[0], m = mode.slice(src.length + 1), unit = src === "sa" ? 'אזור סטטיסטי (למ"ס)' : "שכונה (ועדת הבחירות)";
     var none = ' <span class="sw" style="background:#bbb;opacity:.4"></span>מקווקו = אין קלפי באזור זה.';
-    if (m === "ses") el.innerHTML = "אשכול חברתי-כלכלי (1 נמוך, 10 גבוה): " + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(function (c) { return '<span class="sw" style="background:' + sesColor(c) + '"></span>' + c; }).join(" ");
-    else if (m === "winner") el.innerHTML = "הרשימה הגדולה בכל " + unit + " (2026). לחצו לפרטים." + none;
-    else el.innerHTML = "אחוז ההצבעה ל" + esc(pname(P[+m.slice(2)][1])) + " לפי " + unit + ": כהה יותר = יותר." + none;
+    if (m === "ses") el.innerHTML = 'אשכול חברתי-כלכלי (הלמ"ס, 2021), 1 הנמוך ביותר: <span class="lg-steps ses">' + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(function (c) { return '<span><i style="background:' + sesColor(c) + '"></i>' + c + "</span>"; }).join("") + "</span>";
+    else if (m === "winner") el.innerHTML = "הרשימה הגדולה בכל " + unit + " (2026). ברשימה: הרשימות שבתצוגה, לפי מספר האזורים." + '<span class="lg-list" id="lgList"></span>' + none;
+    else if (m === "turnout") el.innerHTML = "אחוז הצבעה לפי " + unit + " (5 חמישונים):" + (BRK ? brk(f0, TURN_C) : "") + none;
+    else { var pc = color(P[+m.slice(2)][0]); el.innerHTML = "אחוז ל" + esc(pname(P[+m.slice(2)][1])) + " מהקולות הכשרים, לפי " + unit + ":" + (BRK ? brk(function (v) { return (v * 100).toFixed(v < 0.1 ? 1 : 0) + "%"; }, [pc, pc, pc, pc, pc], SHARE_O) : "") + none; }
+    if (m === "winner") winnerLegend();
   }
+  // Lists in the visible area of the winner layer, sorted by how many areas they lead.
+  function winnerLegend() {
+    var el = $("lgList"); if (!el || !cur || !/:winner$/.test(mode)) return;
+    var src = mode.split(":")[0], b = map.getBounds(), cnt = {};
+    cur.eachLayer(function (l) { if (!l.getBounds || !b.intersects(l.getBounds())) return; var x = rowOf(src, l.feature); if (x && x[0]) { var pi = x[1][0]; cnt[pi] = (cnt[pi] || 0) + 1; } });
+    var ks = Object.keys(cnt).sort(function (a, c) { return cnt[c] - cnt[a] || (P[a][1] < P[c][1] ? -1 : 1); }).slice(0, 8);
+    el.innerHTML = ks.map(function (pi) { return '<span><i class="chip" style="background:' + color(P[pi][0]) + '"></i>' + esc(pname(P[pi][1])) + " <bdi>" + cnt[pi] + "</bdi></span>"; }).join("");
+  }
+  map.on("moveend", function () { if (/:winner$/.test(mode)) winnerLegend(); });
+  // Party order is computed from national votes (not from the array order of parties[]).
   function layerSelect() {
     var sel = $("layer"); if (!sel) return;
-    function parties(src) { return P.slice(0, 14).map(function (p, i) { return '<option value="' + src + ":p:" + i + '">אחוז ל' + esc(pname(p[1])) + "</option>"; }).join(""); }
-    sel.innerHTML = '<option value="off">ללא</option><optgroup label="שכונות (ועדת הבחירות)"><option value="nb:winner">הרשימה המובילה</option>' + parties("nb") +
-      '</optgroup><optgroup label="אזורים סטטיסטיים (למ&quot;ס)"><option value="sa:winner">הרשימה המובילה</option><option value="sa:ses">אשכול חברתי-כלכלי</option>' + parties("sa") + "</optgroup>";
+    var idx = {}; P.forEach(function (p, i) { idx[p[0]] = i; });
+    var ord = NAT.parties.filter(function (p) { return p.v / NAT.valid >= 0.01; }).map(function (p) { return idx[p.code]; });
+    function parties(src) { return ord.map(function (i) { return '<option value="' + src + ":p:" + i + '">אחוז ל' + esc(pname(P[i][1])) + "</option>"; }).join(""); }
+    sel.innerHTML = '<option value="off">ללא</option><optgroup label="לפי שכונה (ועדת הבחירות)"><option value="nb:winner">הרשימה הגדולה</option><option value="nb:turnout">אחוז הצבעה</option>' + parties("nb") +
+      '</optgroup><optgroup label="לפי אזור סטטיסטי (למ&quot;ס)"><option value="sa:winner">הרשימה הגדולה</option><option value="sa:turnout">אחוז הצבעה</option><option value="sa:ses">אשכול חברתי-כלכלי</option>' + parties("sa") + "</optgroup>";
+    sel.value = mode;
     sel.onchange = function () { setLayer(sel.value); };
   }
 
@@ -317,14 +749,18 @@
   // Geocoder chain (see README): normalize -> Nominatim free text -> Nominatim structured (bounded to the city)
   // -> without "שדרות" -> Photon -> GovMap autocomplete (exact street+number only) -> settlement from the data -> local match.
   // One request per search step, at most 1 request/second per service, results cached, no search-as-you-type, no custom headers.
-  var searchId = 0, last = {}, cache = {};
+  var searchId = 0, last = {}, cache = {}, pending = false;
   function throttled(host, url, opts) {
     var key = url + (opts && opts.body || "");
     if (cache[key]) return cache[key];
     var wait = Math.max(0, 1100 - (Date.now() - (last[host] || 0)));
     last[host] = Date.now() + wait;
     cache[key] = new Promise(function (ok) { setTimeout(ok, wait); }).then(function () {
-      return fetch(url, opts).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+      // A hung geocoder must not stall the chain: abort after 6 s and move on to the next source.
+      var ctl = typeof AbortController === "function" ? new AbortController() : null, tm = ctl && setTimeout(function () { ctl.abort(); }, 6000);
+      var o = {}; for (var k in (opts || {})) o[k] = opts[k]; if (ctl) o.signal = ctl.signal;
+      return fetch(url, o).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .finally(function () { if (tm) clearTimeout(tm); });
     });
     cache[key].catch(function () { delete cache[key]; });
     return cache[key];
@@ -337,11 +773,19 @@
     var n = 0; for (var i = 0; i < t.length; i++) { if (!HEB[t[i]]) return null; n += HEB[t[i]]; }
     return n;
   }
-  var ALIASES = { "נצרת עילית": "נוף הגליל", "פתח תקוה": "פתח תקווה", "מודיעין מכבים רעות": "מודיעין-מכבים-רעות", "מודיעין": "מודיעין-מכבים-רעות", "בנימינה": "בנימינה-גבעת עדה", "ת\"א": "תל אביב-יפו", "תא": "תל אביב-יפו", "תל אביב": "תל אביב-יפו", "יפו": "תל אביב-יפו", "תל-אביב": "תל אביב-יפו" };
+  var ALIASES = { "נצרת עילית": "נוף הגליל", "פתח תקוה": "פתח תקווה", "מודיעין מכבים רעות": "מודיעין-מכבים-רעות", "מודיעין": "מודיעין-מכבים-רעות", "בנימינה": "בנימינה-גבעת עדה", "ת\"א": "תל אביב-יפו", "תא": "תל אביב-יפו", "תל אביב": "תל אביב-יפו", "יפו": "תל אביב-יפו", "תל-אביב": "תל אביב-יפו",
+    // Arabic and English city names (lower-case keys for Latin script).
+    "القدس": "ירושלים", "حيفا": "חיפה", "يافا": "תל אביב-יפו", "تل أبيب": "תל אביב-יפו", "تل ابيب": "תל אביב-יפו", "الناصرة": "נצרת", "الناصره": "נצרת", "أم الفحم": "אום אל-פחם", "ام الفحم": "אום אל-פחם",
+    "رهط": "רהט", "عكا": "עכו", "اللد": "לוד", "الرملة": "רמלה", "الطيبة": "טייבה", "الطيبه": "טייבה", "شفاعمرو": "שפרעם", "سخنين": "סח'נין", "طمرة": "טמרה", "الطيرة": "טירה", "كفر قاسم": "כפר קאסם", "بئر السبع": "באר שבע",
+    "jerusalem": "ירושלים", "tel aviv": "תל אביב-יפו", "tel aviv-yafo": "תל אביב-יפו", "tel aviv yafo": "תל אביב-יפו", "jaffa": "תל אביב-יפו", "yafo": "תל אביב-יפו", "haifa": "חיפה", "beer sheva": "באר שבע", "beersheba": "באר שבע", "be'er sheva": "באר שבע",
+    "nazareth": "נצרת", "eilat": "אילת", "netanya": "נתניה", "ashdod": "אשדוד", "ashkelon": "אשקלון", "herzliya": "הרצליה", "raanana": "רעננה", "ra'anana": "רעננה", "kfar saba": "כפר סבא", "rehovot": "רחובות", "rishon lezion": "ראשון לציון", "rishon letzion": "ראשון לציון",
+    "petah tikva": "פתח תקווה", "petah tiqva": "פתח תקווה", "ramat gan": "רמת גן", "givatayim": "גבעתיים", "holon": "חולון", "bat yam": "בת ים", "bnei brak": "בני ברק", "modiin": "מודיעין-מכבים-רעות", "modi'in": "מודיעין-מכבים-רעות", "nahariya": "נהרייה", "akko": "עכו", "acre": "עכו",
+    "tiberias": "טבריה", "safed": "צפת", "tzfat": "צפת", "karmiel": "כרמיאל", "afula": "עפולה", "hadera": "חדרה", "lod": "לוד", "ramla": "רמלה", "rahat": "רהט", "umm al-fahm": "אום אל-פחם", "umm al fahm": "אום אל-פחם", "dimona": "דימונה", "ariel": "אריאל", "kiryat shmona": "קריית שמונה", "beit shemesh": "בית שמש" };
+  function alias(c) { var t = c.trim(); return ALIASES[t] || ALIASES[plain(t)] || ALIASES[t.toLowerCase()] || ALIASES[plain(t).toLowerCase()] || null; }
 
   function normalize(q) {
-    var s = q.replace(/״/g, '"').replace(/[׳`’]/g, "'").replace(/[–־]/g, "-").replace(/\s+/g, " ").trim();
-    s = s.replace(/(^|,\s*)(רחוב|רח'|רח\.|רח)\s+/g, "$1");
+    var s = q.replace(/[،؛]/g, ",").replace(/״/g, '"').replace(/[׳`’]/g, "'").replace(/[–־]/g, "-").replace(/\s+/g, " ").trim();
+    s = s.replace(/(^|,\s*)(רחוב|רח'|רח\.|רח|شارع|street|st\.)\s+/gi, "$1");
     s = s.replace(/(^|[\s,])(שד'|שד\.)\s*/g, "$1שדרות ");
     s = s.replace(/^(מושב|קיבוץ|קבוץ)\s+(?=\S)/, "");
     s = s.replace(/(\d+)\s*\/\s*\d+/g, "$1").replace(/\s*(דירה|כניסה)\s*\S+/g, "");
@@ -362,28 +806,51 @@
     Object.keys(LOC).forEach(function (k) { var o = LOC[k]; o.y /= o.n; o.x /= o.n; });
     return LOC;
   }
-  // Find a locality in the data for a typed city name (exact after punctuation, then a vowel-less skeleton).
-  function findLoc(city) {
+  // Exact after folding finals, punctuation and doubled yod/vav (נהרייה = נהריה, קריית = קרית). With fuzzy, also one
+  // edit away, but only for names of 5+ letters and only when exactly one locality is that close. (The old vowel-less
+  // skeleton matched נהרייה to נהורה and בית חנינא to localities nowhere near Jerusalem.)
+  function fold(s) { return plain(s).replace(/[ךםןףץ]/g, function (c) { return { "ך": "כ", "ם": "מ", "ן": "נ", "ף": "פ", "ץ": "צ" }[c]; }).replace(/יי/g, "י").replace(/וו/g, "ו"); }
+  function lev1(a, b) { // edit distance <= 1
+    if (a === b) return true; var la = a.length, lb = b.length; if (Math.abs(la - lb) > 1) return false;
+    var i = 0; while (i < la && i < lb && a[i] === b[i]) i++;
+    return la === lb ? a.slice(i + 1) === b.slice(i + 1) : la > lb ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
+  }
+  function findLoc(city, fuzzy) {
     if (!city) return null;
-    var c = ALIASES[city.trim()] || ALIASES[plain(city)] || city, L = localities(), names = Object.keys(L);
-    var pc = plain(c), sc = skel(c), i;
-    for (i = 0; i < names.length; i++) if (plain(names[i]) === pc || plain(names[i].split(/\s+-\s+/)[0]) === pc) return L[names[i]];
-    for (i = 0; i < names.length; i++) if (skel(names[i]) === sc) return L[names[i]];
-    return null;
+    var c = alias(city) || city, L = localities(), names = Object.keys(L), fc = fold(c), i, best = null;
+    for (i = 0; i < names.length; i++) if (fold(names[i]) === fc || fold(names[i].split(/\s+-\s+/)[0]) === fc) { if (!best || L[names[i]].k > best.k) best = L[names[i]]; }
+    if (best || !fuzzy || fc.replace(/\s/g, "").length < (fuzzy === true ? 5 : fuzzy)) return best;
+    var hits = names.filter(function (nm) { return lev1(fold(nm), fc) || lev1(fold(nm.split(/\s+-\s+/)[0]), fc); });
+    return hits.length === 1 ? L[hits[0]] : null;
+  }
+  // "Did you mean" for a lone name that is one edit away from a locality but not an exact match (צפאת -> צפת).
+  // Shown as buttons; never applied automatically for short names (גילה is one edit from both שילה and גאליה).
+  function suggest(n, p) {
+    var el = $("alts"); el.innerHTML = "";
+    if (p.num || /,/.test(n)) return;
+    var fq = fold(alias(n) || n); if (fq.replace(/\s/g, "").length < 3) return;
+    var L = localities(), exact = p.loc && fold(p.loc.name) === fq;
+    var hits = Object.keys(L).filter(function (nm) { var f = fold(nm), f0 = fold(nm.split(/\s+-\s+/)[0]); return f !== fq && f0 !== fq && (lev1(f, fq) || lev1(f0, fq)); })
+      .filter(function (nm) { return !p.loc || nm !== p.loc.name; }).sort(function (a, b) { return L[b].k - L[a].k; }).slice(0, 3);
+    if (!hits.length || exact) return;
+    el.innerHTML = '<span class="alts-q">האם התכוונתם ליישוב:</span>' + hits.map(function (nm) { return '<button type="button" data-q="' + esc(nm) + '">' + esc(nm) + "</button>"; }).join("");
+    Array.prototype.forEach.call(el.querySelectorAll("button"), function (b) { b.addEventListener("click", function () { $("q").value = b.getAttribute("data-q"); search(); }); });
   }
   // Split "<street> <num>, <city>" (comma optional).
   function parse(n) {
     var street = n, city = "", loc = null, m;
     var parts = n.split(/\s*,\s*/);
-    if (parts.length > 1) { city = parts.pop(); street = parts.join(" "); loc = findLoc(city); }
+    if (parts.length > 1) { city = parts.pop(); street = parts.join(" "); loc = findLoc(city, true); }
     else {
       var w = n.split(" ");
       for (var k = Math.min(4, w.length); k >= 1 && !loc; k--) {
-        var cand = w.slice(w.length - k).join(" "), l = findLoc(cand);
+        // Without a comma only exact names count, except a whole query of one 4+ letter name (a misspelt locality).
+        var cand = w.slice(w.length - k).join(" "), l = findLoc(cand, k === w.length ? 4 : false);
         if (l) { loc = l; city = cand; street = w.slice(0, w.length - k).join(" "); }
       }
     }
-    if (ALIASES[city]) city = ALIASES[city];
+    if (alias(city)) city = alias(city);
+    if (loc && /[A-Za-z\u0600-\u06FF]/.test(city)) city = loc.name; // Arabic/Latin city -> the Hebrew name the geocoders use
     var num = null;
     if ((m = street.match(/(^|\s)(\d+)[א-ת]?(?=\s|$)/))) { num = m[2]; street = (street.slice(0, m.index) + " " + street.slice(m.index + m[0].length)).replace(/\s+/g, " ").trim(); }
     return { street: street, num: num, city: city, loc: loc };
@@ -422,6 +889,8 @@
         var pr = f[i].properties || {};
         if (!cityOk([pr.city, pr.district, pr.locality, pr.type === "city" || pr.type === "locality" ? pr.name : null], p)) continue;
         if (p.street && pr.street && skel(pr.street).indexOf(skel(p.street.replace(/^שדרות\s+/, ""))) < 0 && skel(p.street).indexOf(skel(pr.street)) < 0) continue;
+        // a fuzzy hit with no street must share at least one word with the query (ואדי אל נעם -> נחל פצאל is not a match)
+        if (p.street && !pr.street && !p.street.split(/\s+/).some(function (w) { w = skel(w); return w.length >= 3 && skel(pr.name || "").indexOf(w) >= 0; })) continue;
         var prec = pr.housenumber ? "house" : pr.type === "street" ? "street" : "area";
         var c = f[i].geometry.coordinates;
         return { lat: c[1], lon: c[0], label: [pr.name, pr.street && (pr.street + " " + (pr.housenumber || "")), pr.city].filter(Boolean).join(", "), prec: prec, src: "Photon" };
@@ -496,14 +965,16 @@
   }
 
   var PREC = { house: "כתובת מדויקת", street: "רחוב בלבד (מספר הבית לא נמצא)", area: "שכונה/אזור", settlement: "מרכז היישוב", local: "לפי כתובת קלפי תואמת" };
-  function search() {
+  function search(fromUrl) {
     var q = $("q").value.trim();
     $("alts").innerHTML = "";
-    if (!q || !D) return;
-    history.replaceState(null, "", "?q=" + encodeURIComponent(q));
+    if (!q) { status('<p class="hint-msg" role="status">הקלידו כתובת: רחוב, מספר ויישוב. למשל: הרצל 1, חולון</p>', true); $("q").focus(); return; }
+    if (!D) { pending = true; status('<p class="hint-msg" role="status">טוענים את נתוני הקלפיות… החיפוש יתחיל מיד בסיום הטעינה.</p>', true); return; }
+    if (fromUrl !== true) setUrl({ q: q }, true);
+    $("clearQ").hidden = false;
     var id = ++searchId, n = normalize(q), p = parse(n);
+    $("alts").innerHTML = "";
     var free = p.loc && p.city ? (p.street + (p.num ? " " + p.num : "") + ", " + p.city).replace(/^,\s*/, "") : n;
-    status("מחפש את הכתובת…");
     // A bare settlement name: use that settlement's polling places from the data.
     if (!p.street && p.loc) return settlement(p.loc, "");
     var steps = [function () { return cec(p.loc && p.city ? free.replace(/,/g, " ") : n, p); },
@@ -517,14 +988,31 @@
     }
     steps.push(function () { return photon(free, p); });
     if (p.num && p.street && p.city) steps.push(function () { return govmap(p); });
+    // Stepper (≤3 rows), shown only after 600 ms so a fast CEC hit does not flash it.
+    var kinds = steps.map(function (f, j) { return j === 0 ? "cec" : j === steps.length - 1 && p.num && p.street && p.city ? "govmap" : "osm"; });
+    var rowsK = kinds.filter(function (k, j) { return kinds.indexOf(k) === j; }), stt = {}, shown = false;
+    var NAMES = { cec: "אתר ועדת הבחירות", osm: "OpenStreetMap", govmap: "GovMap" };
+    rowsK.forEach(function (k) { stt[k] = "pend"; });
+    function draw() {
+      if (!shown || id !== searchId) return;
+      $("status").innerHTML = '<div class="stepper"><p class="st-t">מחפשים את הכתובת…</p><ul>' + rowsK.map(function (k) {
+        return '<li class="' + stt[k] + '"><span class="st-i" aria-hidden="true"></span><bdi>' + NAMES[k] + "</bdi>" + (stt[k] === "no" ? ": לא נמצאה התאמה" : "") + "</li>";
+      }).join("") + '</ul><div class="skel" aria-hidden="true"><i></i><i></i></div><button type="button" class="linkish" id="cancelQ">ביטול</button></div>';
+      $("cancelQ").onclick = function () { ++searchId; clearTimeout(tmr); status(""); };
+    }
+    var tmr = setTimeout(function () { shown = true; draw(); }, 600);
+    function done() { clearTimeout(tmr); }
     var best = null, failed = 0, i = 0;
     (function next() {
       if (id !== searchId) return;
       if (i >= steps.length) {
+        done();
         if (best) return show(best);
-        if (p.loc) return settlement(p.loc, failed === steps.length ? "שירותי איתור הכתובות לא זמינים כרגע. " : "הכתובת לא נמצאה. ");
-        return localSearch(q, failed === steps.length ? "שירותי איתור הכתובות לא זמינים כרגע. " : "הכתובת לא נמצאה. ");
+        if (p.loc) return settlement(p.loc, failed === steps.length ? "שירותי איתור הכתובות לא זמינים כרגע." : "", true);
+        return localSearch(q, failed === steps.length);
       }
+      if (i && kinds[i] !== kinds[i - 1] && stt[kinds[i - 1]] === "act") stt[kinds[i - 1]] = "no";
+      stt[kinds[i]] = "act"; draw();
       steps[i++]().then(function (r) {
         if (id !== searchId) return;
         if (r && (r.prec === "house" || !p.num)) return show(r);
@@ -534,24 +1022,37 @@
     })();
     function show(r) {
       if (id !== searchId) return;
-      var c = r.c || (p.loc && p.loc.c) || null;
-      status("נמצא: " + r.label + " · דיוק: " + PREC[r.prec] + " · מקור: " + r.src + (c ? " · קלפיות מתוך היישוב בלבד" : "") + ". אפשר לגרור את הסמן כדי לדייק.");
-      locate(r.lat, r.lon, r.label, r.prec, { c: c, nb: r.nb });
+      done();
+      var c = r.c || null;
+      // Scope to the typed locality only when the point is actually inside it (with ~5 km of slack).
+      if (!c && p.loc && r.lat >= p.loc.s - .05 && r.lat <= p.loc.nn + .05 && r.lon >= p.loc.w - .05 && r.lon <= p.loc.e + .05) c = p.loc.c;
+      status("");
+      locate(r.lat, r.lon, r.label, r.prec, { c: c, nb: r.nb, src: r.src });
     }
   }
-  function settlement(l, why) {
-    status(why + "מוצג מרכז היישוב " + l.name + " (" + l.k + " קלפיות ב-" + l.n + " מקומות). דיוק: " + PREC.settlement + ". לחצו על המפה או גררו את הסמן כדי לדייק.");
-    locate(l.y, l.x, "מרכז " + l.name, "settlement", { c: l.c });
+  // Settlement fallback. notFound: the street was typed but not found (yellow banner per brief §3.6).
+  function settlement(l, why, notFound) {
+    status("");
+    var msg = (why ? why + " " : "") + (notFound ? "לא מצאנו את הרחוב. מוצגות קלפיות סמוך למרכז " + l.name + "." : "");
+    locate(l.y, l.x, "מרכז " + l.name, "settlement", { c: l.c, why: msg.trim(), src: "נתוני הקלפיות" });
+  }
+  function noResult(q, down) {
+    status(""); clearResult();
+    $("results").innerHTML = '<div class="noresult" role="alert"><h2 class="sec">' + (down ? "שירותי איתור הכתובות לא זמינים כרגע." : "לא מצאנו את הכתובת \u201D" + esc(q) + "\u201C") + "</h2>" +
+      (down ? "<p>אפשר ללחוץ על המפה במקום הכתובת.</p>" : "<p>מה אפשר לעשות:</p><ul><li>לבדוק את האיות ואת שם היישוב</li><li>לכתוב רק רחוב ויישוב</li><li>ללחוץ על המפה במקום הנכון</li></ul>") + "</div>";
+    $("announce").textContent = down ? "שירותי איתור הכתובות לא זמינים כרגע." : "לא מצאנו את הכתובת " + q;
+    if (!down) { var n = normalize(q); suggest(n, parse(n)); }
   }
 
   // Last resort: match the query against the polling-place addresses (locality first, then street)
   function norm(s) { return " " + s.replace(/["'״׳`\-–,.()]/g, " ").replace(/\s+/g, " ").trim() + " "; }
-  function localSearch(q, why) {
+  function localSearch(q, down) {
+    var why = down ? "שירותי איתור הכתובות לא זמינים כרגע." : "";
     var nq = norm(normalize(q)).replace(/ קריית /g, " קרית ");
     var locs = {};
     D.b.forEach(function (b) {
       var forms = [norm(b.t), norm(b.t.split(/\s*-\s*/)[0])];
-      forms.forEach(function (t) { if (t.length > 3 && nq.indexOf(t) >= 0 && (locs[b.t] || 0) < t.length) locs[b.t] = t.length; });
+      forms.forEach(function (t) { if (t.length > 4 && nq.indexOf(t) >= 0 && (locs[b.t] || 0) < t.length) locs[b.t] = t.length; });
     });
     var locNames = Object.keys(locs).sort(function (a, b) { return locs[b] - locs[a]; });
     var loc = locNames[0];
@@ -565,26 +1066,115 @@
       toks.forEach(function (t) { if (hay.indexOf(" " + t + " ") >= 0) s += 2; else if (hay.indexOf(t) >= 0) s += 1; });
       if (s > bestScore) { bestScore = s; best = [b]; } else if (s === bestScore && s > 0) best.push(b);
     });
-    if (bestScore >= 2) {
+    // With no locality in the query, a lone generic word (ואדי, דרך…) is not enough: every 3+ letter word must appear.
+    if (!loc) best = best.filter(function (b) { var hay = norm(b.a + " " + b.v); return toks.every(function (t) { return t.length < 3 || hay.indexOf(t) >= 0; }); });
+    if (bestScore >= 2 && best.length) {
       var qn = (q.match(/\d+/) || [])[0];
       if (qn) best.sort(function (a, b) {
         var an = +((a.a.match(/\d+/) || [1e9])[0]), bn = +((b.a.match(/\d+/) || [1e9])[0]);
         return Math.abs(an - qn) - Math.abs(bn - qn);
       });
       var b = best[0];
-      status(why + "מוצג לפי כתובת קלפי תואמת: " + b.a + ", " + b.t + ". דיוק: " + PREC.local + ". גררו את הסמן כדי לדייק.");
-      return locate(b.y, b.x, b.a + ", " + b.t, "local", { c: b.c });
+      status("");
+      return locate(b.y, b.x, b.a + ", " + b.t, "local", { c: b.c, why: why, src: "כתובות הקלפיות" });
     }
-    if (loc) return settlement(localities()[loc], why);
-    status(why + "לא נמצאה התאמה. נסו לכתוב רחוב, מספר ועיר, או לחצו על המפה.");
+    if (loc) return settlement(localities()[loc], why, true);
+    noResult(q, down);
   }
 
-  $("go").onclick = search;
-  $("q").addEventListener("keydown", function (e) { if (e.key === "Enter") search(); });
+  $("searchForm").addEventListener("submit", function (e) { e.preventDefault(); mq.matches && $("q").blur(); search(); });
+  Array.prototype.forEach.call(document.querySelectorAll(".example"), function (b) {
+    b.addEventListener("click", function () { $("q").value = b.getAttribute("data-q"); search(); });
+  });
+  $("q").addEventListener("input", function () { $("clearQ").hidden = !$("q").value; });
+  $("clearQ").addEventListener("click", function () { $("q").value = ""; $("clearQ").hidden = true; ++searchId; status(""); clearResult(); renderEmpty(); setUrl({}, true); $("q").focus(); });
+  function clearResult() {
+    if (marker) { marker.remove(); marker = null; } if (layerNear) { layerNear.remove(); layerNear = null; }
+    nearMarkers = []; lastNear = null; where = null; window.kalpiLast = null;
+  }
+
+  // ---------- URL as state: q | ll | kalpi, plus layer ----------
+  var urlState = {};
+  function layerParam() {
+    if (mode === "off") return null; var src = mode.split(":")[0], m = mode.slice(src.length + 1);
+    return m.slice(0, 2) === "p:" ? src + ":p:" + pname(P[+m.slice(2)][1]) : mode;
+  }
+  function setUrl(st, push) {
+    if (st) urlState = st;
+    var u = new URLSearchParams();
+    Object.keys(urlState).forEach(function (k) { if (urlState[k] != null) u.set(k, urlState[k]); });
+    var lp = layerParam(); if (lp) u.set("layer", lp);
+    var qs = u.toString(), url = location.pathname + (qs ? "?" + qs : "");
+    if (url === location.pathname + location.search) return;
+    history[push ? "pushState" : "replaceState"](null, "", url);
+  }
+  function applyUrl(u) {
+    var lay = u.get("layer");
+    if (lay) {
+      var lm = lay.match(/^(nb|sa):p:(.+)$/), val = lay;
+      if (lm) { val = null; P.forEach(function (p, i) { if (pname(p[1]) === lm[2] || p[0] === lm[2]) val = lm[1] + ":p:" + i; }); }
+      if (val && /^(nb|sa):(winner|turnout|ses|p:\d+)$/.test(val) && !(val === "nb:ses")) { mode = val; $("layer").value = val; setLayer(val, true); }
+    } else if (mode !== "off") { $("layer").value = "off"; setLayer("off", true); }
+    var kal = u.get("kalpi"), q = u.get("q"), ll = u.get("ll");
+    if (kal) {
+      var km = kal.match(/^(\d+)-(.+)$/), hit = null;
+      if (km) D.b.forEach(function (b) { if (!hit && b.c === +km[1] && b.k.some(function (k) { return String(k[1]) === km[2]; })) hit = b; });
+      if (hit) { urlState = { kalpi: kal }; pendingKalpi = km[2]; $("q").value = ""; return locate(hit.y, hit.x, "קלפי " + km[2] + " · " + hit.v + ", " + hit.t, "kalpi", { c: hit.c, kalpi: km[2], fromUrl: 1, src: "קישור לקלפי" }); }
+    } else if (q) { urlState = { q: q }; $("q").value = q; $("clearQ").hidden = false; return search(true); }
+    else if (ll) {
+      var m = ll.split(",").map(Number);
+      if (m.length === 2 && isFinite(m[0]) && isFinite(m[1])) { urlState = { ll: ll }; return locate(m[0], m[1], "נקודה במפה", "manual", { fromUrl: 1 }); }
+    }
+    if (kal || ll) toast("הקישור לא תקין, מוצג דף הבית");
+    urlState = {}; clearResult(); renderEmpty();
+  }
+  window.addEventListener("popstate", function () { ++searchId; status(""); applyUrl(new URLSearchParams(location.search)); });
+
+  // ---------- geolocation: opt-in with a one-line pre-prompt; locality from the containing stat area ----------
+  var geoAsked = false;
+  function geoMsg(t, isErr) { var n = $("geoNote"); n.hidden = !t; n.className = "geo-note" + (isErr ? " err" : ""); n.innerHTML = t || ""; }
+  function inRing(x, y, r) { var c = false; for (var i = 0, j = r.length - 1; i < r.length; j = i++) { var xi = r[i][0], yi = r[i][1], xj = r[j][0], yj = r[j][1]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; }
+  function saAt(lat, lon) {
+    return load("sa").then(function () {
+      var hit = null;
+      layers.sa.eachLayer(function (l) {
+        if (hit || !l.getBounds().contains([lat, lon])) return;
+        var g = l.feature.geometry, polys = g.type === "Polygon" ? [g.coordinates] : g.coordinates;
+        polys.forEach(function (pg) { if (!hit && inRing(lon, lat, pg[0]) && !pg.slice(1).some(function (h) { return inRing(lon, lat, h); })) hit = l.feature.properties.c; });
+      });
+      return hit;
+    }, function () { return null; });
+  }
+  function doGeo() {
+    var btn = $("loc"); btn.setAttribute("aria-busy", "true"); btn.classList.add("busy"); geoMsg("מאתרים את המיקום שלכם…");
+    navigator.geolocation.getCurrentPosition(function (p) {
+      var lat = p.coords.latitude, lon = p.coords.longitude;
+      saAt(lat, lon).then(function (code) {
+        btn.removeAttribute("aria-busy"); btn.classList.remove("busy"); geoMsg("");
+        $("q").value = ""; $("clearQ").hidden = true;
+        locate(lat, lon, "המיקום שלי", "geo", { c: code ? Math.floor(code / 10000) : null });
+      });
+    }, function (e) {
+      btn.removeAttribute("aria-busy"); btn.classList.remove("busy");
+      geoMsg(e.code === 1 ? "לא קיבלנו הרשאה למיקום. אפשר להקליד כתובת במקום." : e.code === 3 ? "איתור המיקום לקח יותר מדי זמן. נסו שוב או הקלידו כתובת." : "הדפדפן לא מצליח לאתר את המיקום כרגע.", true);
+    }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
+  }
   $("loc").onclick = function () {
-    if (!navigator.geolocation) return status("הדפדפן לא תומך באיתור מיקום.");
-    status("מאתר את המיקום שלכם…");
-    navigator.geolocation.getCurrentPosition(function (p) { status(""); locate(p.coords.latitude, p.coords.longitude, "המיקום שלי"); },
-      function () { status("לא ניתן לקבל את המיקום."); }, { enableHighAccuracy: true, timeout: 10000 });
+    if (!navigator.geolocation) return geoMsg("הדפדפן הזה לא תומך באיתור מיקום.", true);
+    if (geoAsked) return doGeo();
+    geoMsg('המיקום משמש רק כדי למצוא קלפיות קרובות. הוא נשאר בדפדפן ולא נשמר. <button type="button" class="linkish" id="geoOk">אישור</button>');
+    $("geoOk").onclick = function () { geoAsked = true; doGeo(); };
+    $("geoOk").focus();
   };
+
+  // ---------- keyboard: "/" focuses search, Esc clears / closes / lowers the sheet ----------
+  document.addEventListener("keydown", function (e) {
+    var t = e.target, typing = t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName);
+    if (e.key === "/" && !typing && !e.ctrlKey && !e.metaKey) { e.preventDefault(); $("q").focus(); $("q").select(); }
+    else if (e.key === "Escape") {
+      if (t === $("q") && $("q").value) { $("q").value = ""; $("clearQ").hidden = true; return; }
+      if (map._popup && map.hasLayer(map._popup)) { map.closePopup(); return; }
+      if (mq.matches && sheet.state !== "peek") sheet.set(sheet.state === "full" ? "half" : "peek");
+    }
+  });
 })();

@@ -1,0 +1,29 @@
+{
+  "name": "איך הצביעו לידכם? קלפיות ותוצאות לפי כתובת · כנסת 26",
+  "short_name": "מפת הקלפיות",
+  "description": "הקלפיות הקרובות לכל כתובת בישראל ותוצאות ההצבעה בכל קלפי בבחירות לכנסת ה-26.",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f4ef",
+  "theme_color": "#f6f4ef",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

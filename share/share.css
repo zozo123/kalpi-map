@@ -1,0 +1,20 @@
+/* kalpi-map share module styles. Uses the site's CSS variables when present. */
+.ks-quiz{border-color:var(--accent,#1f5fbf)}
+.ks-opts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+.ks-opt{font-weight:600}
+.ks-opt.ks-right{background:#e6f4ea;border-color:#34a853;color:#1d1d1f}
+.ks-opt.ks-wrong{background:#fde7e7;border-color:#d93025;color:#1d1d1f}
+.ks-res{min-height:1.4em;font-weight:600}
+.ks-gated{filter:blur(7px);pointer-events:none;user-select:none;transition:filter .3s}
+.ks-preview{width:100%;max-width:300px;height:auto;display:block;margin:10px auto;border-radius:10px;border:1px solid var(--line,#e2e0da)}
+.ks-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.ks-net{display:inline-flex;align-items:center;padding:8px 12px;border-radius:10px;border:1px solid var(--line,#e2e0da);text-decoration:none;font-size:.92rem;color:#fff;background:#555}
+.ks-wa{background:#1f8f4e}.ks-tg{background:#2a86c9}.ks-x{background:#111}.ks-fb{background:#1b5fc8}
+button.ks-net.ks-copy{background:var(--card,#fff);color:var(--text,#1d1d1f)}
+.ks-exact{display:block;margin-top:6px}
+/* live site (direction A) */
+.ks-share .ks-row button{min-height:42px;padding:0 14px;border:1px solid var(--rule,#dcd7cc);border-radius:4px;background:var(--card,#fff);font-weight:600}
+.ks-share .ks-row button.primary{margin:0;background:var(--ink,#141414);color:#fff;border-color:var(--ink,#141414)}
+.ks-net{min-height:42px;border-radius:4px}
+.ks-preview{border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+@media print{.ks-share{display:none}}

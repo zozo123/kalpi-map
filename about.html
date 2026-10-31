@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>איך זה עובד – שיטה, מקורות ומגבלות | קלפיות ותוצאות לכנסת ה-26</title>
+<meta name="description" content="איך האתר מוצא את הקלפיות הקרובות לכתובת, מאיפה הנתונים, ומה הם לא יכולים לומר: חשאיות ההצבעה, הקלפי הקרובה כהערכה, המעטפות הכפולות ובדיקת הקלפי הרשמית לפי תעודת זהות.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml"><link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png"><link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&family=Heebo:wght@500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="pages/pages.css">
+<link rel="stylesheet" href="pages/about.css">
+</head>
+<body class="kp">
+<header class="kp-nav">
+  <a class="brand" href="index.html">קלפי<span>מפה</span></a>
+  <nav aria-label="ניווט">
+    <a href="index.html">חיפוש לפי כתובת</a>
+    <a href="story.html">הסיפור הארצי</a>
+    <a href="about.html" aria-current="page">איך זה עובד</a>
+  </nav>
+</header>
+
+<main class="wrap narrow">
+  <div class="hero">
+    <div class="eyebrow">שיטה · מקורות · מגבלות</div>
+    <h1>איך זה עובד</h1>
+    <p class="lede">מקלידים כתובת ומקבלים את מקומות הקלפי הקרובים ואיך הצביעו בכל קלפי. כאן מוסבר מאיפה המספרים, איך הם מחוברים, ומה אי אפשר ללמוד מהם.</p>
+  </div>
+
+  <aside class="cta card" aria-label="בדיקת הקלפי הרשמית">
+    <div>
+      <h2>איפה אני מצביע/ה?</h2>
+      <p>האתר מראה את הקלפיות <b>הקרובות</b> לכתובת, לא את הקלפי <b>שלכם</b>. את הקלפי שאליה אתם משובצים בודקים רק באתר הרשמי, לפי מספר תעודת זהות.</p>
+    </div>
+    <a class="btn primary big" href="https://www.gov.il/apps/moin/bocharim/" target="_blank" rel="noopener">לבדיקה באתר הרשמי ←</a>
+  </aside>
+
+  <section class="block" id="method">
+    <h2>השיטה בארבעה צעדים</h2>
+    <ol class="steps4">
+      <li><span class="n">1</span><div><h3>תוצאות לכל קלפי</h3><p>קובץ התוצאות של ועדת הבחירות המרכזית: לכל קלפי רגילה, מספר בעלי זכות הבחירה, המצביעים, הקולות הפסולים והקולות לכל רשימה. <span data-k="regular"></span></p></div></li>
+      <li><span class="n">2</span><div><h3>מיקום לכל קלפי</h3><p>כל קלפי מחוברת למקום הקלפי שלה (כתובת, שם המבנה וקואורדינטות) לפי מספר הקלפי. קלפיות באותן קואורדינטות מקובצות ל<b>מבנה</b> אחד: <span data-k="buildings"></span></p></div></li>
+      <li><span class="n">3</span><div><h3>איתור הכתובת שהקלדתם</h3><p>הכתובת מאותרת בדפדפן, קודם במנוע החיפוש של אתר הבחירות של ועדת הבחירות. כתובת מתקבלת רק אם הרחוב, מספר הבית והיישוב זהים למה שהוקלד והרחוב מופיע ברשימת הרחובות הרשמית של היישוב. אם לא נמצאה, ממשיכים ל-OpenStreetMap (Nominatim), Photon ו-GovMap, ובסוף למרכז היישוב. ליד כל תוצאה מוצגת מידת הדיוק.</p></div></li>
+      <li><span class="n">4</span><div><h3>5 המבנים הקרובים</h3><p>מחשבים מרחק בקו אוויר מהנקודה לכל מבנה קלפי ביישוב שלכם (שם מצביעים התושבים), ומציגים את 5 הקרובים, עם סך הכול למבנה ופירוט לכל קלפי. אחוז ההצבעה = מצביעים חלקי בעלי זכות; חלוקת הקולות מתוך הקולות הכשרים.</p></div></li>
+    </ol>
+    <h3>ומה עוד מחושב</h3>
+    <ul class="clean">
+      <li><b>השוואה ל-2022 ול-2021:</b> כל קלפי של 2026 שויכה לקלפי או למקום הקלפי המקביל בבחירות לכנסת ה-25 וה-24. מוצגים אחוזים בלבד, וההשוואה היא לפי שם הרשימה. כשאין קלפי מקבילה מדויקת, ההשוואה מסומנת "משוערת".</li>
+      <li><b>שכונות:</b> חלוקת השכונות של ועדת הבחירות. תוצאות 2026 בשכונה הן סכום הקלפיות שמקומן בתוכה; 2022 ו-2021 מקבצי השכונות של הוועדה.</li>
+      <li><b>אזורים סטטיסטיים:</b> אזורים סטטיסטיים 2022 ואשכול חברתי-כלכלי 2021 של הלמ"ס, עם סכום הקלפיות שבתוכם.</li>
+      <li><b>הסיפור הארצי:</b> <a href="story.html">עמוד הסיפור</a> מחשב את כל המספרים שלו בדפדפן מאותם קבצים.</li>
+    </ul>
+  </section>
+
+  <section class="block" id="limits">
+    <h2>מה הנתונים <u>לא</u> אומרים</h2>
+    <div class="grid limits">
+      <div class="card lim"><div class="ic" aria-hidden="true">🔒</div><h3>ההצבעה חשאית</h3><p>התוצאות קיימות רק ברמת הקלפי. הן לא מלמדות איך הצביע אדם מסוים, משפחה או בניין מגורים. גם קלפי קטנה היא סכום של קולות של אנשים רבים.</p></div>
+      <div class="card lim"><div class="ic" aria-hidden="true">📍</div><h3>"הקרובה" היא הערכה</h3><p>כל בוחר משובץ לקלפי לפי הכתובת הרשומה שלו במרשם האוכלוסין, לא לפי קרבה. הקלפי הקרובה בקו אוויר יכולה להיות לא שלכם, ושכנים מאותו רחוב יכולים להצביע בקלפיות שונות. הבדיקה הרשמית: <a href="https://www.gov.il/apps/moin/bocharim/" target="_blank" rel="noopener">gov.il/apps/moin/bocharim</a>.</p></div>
+      <div class="card lim"><div class="ic" aria-hidden="true">✉️</div><h3>מעטפות כפולות לא מוצגות</h3><p>חיילים, אנשי נציגויות בחו"ל, אסירים, מאושפזים ואחרים מצביעים במעטפה כפולה. הקולות האלה נספרים בנפרד ואין להם מקום, ולכן אינם במפה. <span data-k="env"></span> אחוזי ההצבעה באתר מחושבים מהקלפיות הרגילות בלבד ולכן נמוכים מהאחוז הרשמי.</p></div>
+      <div class="card lim"><div class="ic" aria-hidden="true">🗺️</div><h3>מקום הקלפי, לא מקום המגורים</h3><p>שכונה ואזור סטטיסטי מקבצים קלפיות לפי מיקום המבנה. מבנה בשכונה אחת יכול לשרת תושבים של שכונה סמוכה. בכ-22% מהאזורים הסטטיסטיים המיושבים אין קלפי בכלל.</p></div>
+      <div class="card lim"><div class="ic" aria-hidden="true">🔁</div><h3>השוואה לפי שם בלבד</h3><p>רשימות מתאחדות, מתפצלות ומשנות שם. ההשוואה בין שנים נעשית רק לרשימה באותו שם, ו"—" מסמן שהרשימה לא התמודדה בשם זה. שם זהה אינו מבטיח הרכב זהה.</p></div>
+      <div class="card lim"><div class="ic" aria-hidden="true">⏱️</div><h3>גרסת נתונים</h3><p><span data-k="ver">תמונת מצב רשמית של ועדת הבחירות.</span> ייתכנו הבדלים קטנים מהפרסום הסופי הרשמי.</p></div>
+    </div>
+  </section>
+
+  <section class="block" id="sources">
+    <h2>מקורות הנתונים</h2>
+    <table class="t src">
+      <thead><tr><th>מה</th><th>מקור</th></tr></thead>
+      <tbody>
+        <tr><td>תוצאות 2026 לפי קלפי</td><td>ועדת הבחירות המרכזית (<code>expb.csv</code>), דרך <a href="https://github.com/harelc/elections-vote-transfer" target="_blank" rel="noopener">harelc/elections-vote-transfer</a> (CC BY-NC-SA 4.0), בהצלבה מול <a href="https://github.com/shaielc/Behirot" target="_blank" rel="noopener">shaielc/Behirot</a></td></tr>
+        <tr><td>מקומות קלפי וקואורדינטות</td><td><a href="https://www.govmap.gov.il/?lay=243675" target="_blank" rel="noopener">GovMap שכבה 243675</a> / ועדת הבחירות, דרך <code>polling_places.csv</code> של shaielc/Behirot</td></tr>
+        <tr><td>שיוך קלפיות ל-2022 ו-2021</td><td>harelc/elections-vote-transfer; תוצאות הוועדה לכנסת ה-25 וה-24</td></tr>
+        <tr><td>שכונות ותוצאות לפי שכונה, חיפוש כתובות</td><td><a href="https://elections.govmap.gov.il/" target="_blank" rel="noopener">אתר הבחירות של ועדת הבחירות / GovMap</a></td></tr>
+        <tr><td>רשימת הרחובות הרשמית</td><td>רשות האוכלוסין, <a href="https://data.gov.il/dataset/321" target="_blank" rel="noopener">data.gov.il מאגר 321</a></td></tr>
+        <tr><td>אזורים סטטיסטיים ומדד חברתי-כלכלי</td><td><a href="https://www.cbs.gov.il/he/Pages/geo-layers.aspx" target="_blank" rel="noopener">הלשכה המרכזית לסטטיסטיקה</a> (רישיון פתוח, גבולות מפושטים)</td></tr>
+        <tr><td>שמות הרשימות ואותיות הפתק</td><td><a href="https://www.gov.il/he/pages/candidates-lists-26" target="_blank" rel="noopener">רשימות המועמדים לכנסת ה-26</a></td></tr>
+        <tr><td>צבעי הרשימות</td><td>בהשראת <a href="https://github.com/RavBogard/israelielection" target="_blank" rel="noopener">RavBogard/israelielection</a></td></tr>
+        <tr><td>איתור כתובות נוסף ומפה</td><td><a href="https://nominatim.org/" target="_blank" rel="noopener">Nominatim</a>, <a href="https://photon.komoot.io/" target="_blank" rel="noopener">Photon</a>, GovMap; מפה © תורמי <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, Leaflet</td></tr>
+      </tbody>
+    </table>
+    <p class="small muted">קובצי הנתונים שהאתר מציג נמצאים בתיקייה <a href="https://github.com/zozo123/kalpi-map/tree/main/data" target="_blank" rel="noopener">data/</a> במאגר, והסקריפטים שבונים אותם בתיקייה <a href="https://github.com/zozo123/kalpi-map/tree/main/scripts" target="_blank" rel="noopener">scripts/</a>.</p>
+  </section>
+
+  <section class="block" id="faq">
+    <h2>שאלות נפוצות</h2>
+    <details><summary>למה הכתובת שלי מוצגת "לפי רחוב" או "לפי יישוב"?</summary><p>לא כל מספרי הבית מוכרים לשירותי המפות. כשאין התאמה מלאה, הנקודה ממוקמת ברחוב או במרכז היישוב, וזה מופיע בשורת הסטטוס. אפשר ללחוץ על המפה או לגרור את הסמן כדי לתקן.</p></details>
+    <details><summary>לאן נשלחת הכתובת שהקלדתי?</summary><p>החיפוש נעשה מהדפדפן שלכם ישירות לשירותי האיתור (מנוע החיפוש של אתר הבחירות, ואם צריך Nominatim, Photon ו-GovMap), בקצב של בקשה אחת לשנייה לכל שירות. לאתר עצמו אין שרת.</p></details>
+    <details><summary>למה אחוז ההצבעה כאן שונה מהרשמי?</summary><p>כי קולות המעטפות הכפולות אינם משויכים לקלפי מקומית. האחוז באתר הוא מצביעים בקלפיות הרגילות חלקי בעלי הזכות הרשומים בהן.</p></details>
+    <details><summary>אפשר לשתף תוצאה?</summary><p>כן: הקישור <code>?q=</code> עם הכתובת פותח את אותו חיפוש.</p></details>
+  </section>
+</main>
+<footer class="wrap narrow foot">אתר עצמאי ולא רשמי, ללא קשר לוועדת הבחירות המרכזית. קוד: MIT; נתונים נגזרים: CC BY-NC-SA 4.0. <a href="https://github.com/zozo123/kalpi-map" target="_blank" rel="noopener">GitHub</a></footer>
+<script src="pages/about.js"></script>
+</body>
+</html>
