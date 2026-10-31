@@ -17,7 +17,7 @@
     maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(map);
   var renderer = L.canvas({ padding: 0.5 });
-  map.on("click", function (e) { locate(e.latlng.lat, e.latlng.lng, "נקודה שנבחרה במפה"); });
+  map.on("click", function (e) { locate(e.latlng.lat, e.latlng.lng, "נקודה שנבחרה במפה", "manual"); });
 
   // ---------- data ----------
   status("טוען נתונים…");
@@ -93,12 +93,13 @@
   }
   function fmtDist(m) { return m < 1000 ? Math.round(m / 10) * 10 + " מ'" : (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' ק"מ'; }
 
-  function locate(lat, lon, label) {
+  function locate(lat, lon, label, prec) {
     if (!D) return;
     var near = D.b.map(function (b) { return { b: b, d: dist(lat, lon, b.y, b.x) }; })
       .sort(function (a, b) { return a.d - b.d; }).slice(0, NEAREST);
     if (marker) marker.remove();
-    marker = L.marker([lat, lon], { title: label }).addTo(map).bindTooltip(label);
+    marker = L.marker([lat, lon], { title: label, draggable: true }).addTo(map).bindTooltip(label);
+    marker.on("dragend", function () { var ll = marker.getLatLng(); status("נקודה שנבחרה במפה."); locate(ll.lat, ll.lng, "נקודה שנבחרה במפה", "manual"); });
     if (layerNear) layerNear.remove();
     layerNear = L.layerGroup(near.map(function (n, i) {
       return L.marker([n.b.y, n.b.x], { icon: L.divIcon({ className: "", html: '<span class="card-num" style="display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;border-radius:50%;background:#1f5fbf;color:#fff;font-weight:700;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)">' + (i + 1) + "</span>", iconSize: [24, 24], iconAnchor: [12, 12] }) })
@@ -106,6 +107,8 @@
     })).addTo(map);
     map.fitBounds(L.latLngBounds([[lat, lon]].concat(near.map(function (n) { return [n.b.y, n.b.x]; }))).pad(0.2));
     render(near, label);
+    // Exposed for automated tests (no network side effects)
+    window.kalpiLast = { lat: lat, lon: lon, prec: prec || "manual", barzel: [].concat.apply([], near.map(function (n) { return n.b.k.map(function (k) { return k[0]; }); })) };
   }
 
   function render(near, label) {
@@ -128,63 +131,189 @@
   }
 
   // ---------- search ----------
-  // Nominatim usage policy: at most 1 request per second, no autocomplete.
-  var lastReq = 0, searchId = 0;
-  function nominatim(q) {
-    var wait = Math.max(0, 1100 - (Date.now() - lastReq));
-    return new Promise(function (ok) { setTimeout(ok, wait); }).then(function () {
-      lastReq = Date.now();
-      var url = "https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=il&accept-language=he&limit=5&q=" + encodeURIComponent(q);
-      return fetch(url, { headers: { "Accept": "application/json" } }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+  // Geocoder chain (see README): normalize -> Nominatim free text -> Nominatim structured (bounded to the city)
+  // -> without "שדרות" -> Photon -> GovMap autocomplete (exact street+number only) -> settlement from the data -> local match.
+  // One request per search step, at most 1 request/second per service, results cached, no search-as-you-type, no custom headers.
+  var searchId = 0, last = {}, cache = {};
+  function throttled(host, url, opts) {
+    var key = url + (opts && opts.body || "");
+    if (cache[key]) return cache[key];
+    var wait = Math.max(0, 1100 - (Date.now() - (last[host] || 0)));
+    last[host] = Date.now() + wait;
+    cache[key] = new Promise(function (ok) { setTimeout(ok, wait); }).then(function () {
+      return fetch(url, opts).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+    });
+    cache[key].catch(function () { delete cache[key]; });
+    return cache[key];
+  }
+
+  var HEB = { "א": 1, "ב": 2, "ג": 3, "ד": 4, "ה": 5, "ו": 6, "ז": 7, "ח": 8, "ט": 9, "י": 10, "כ": 20, "ך": 20, "ל": 30, "מ": 40, "ם": 40, "נ": 50, "ן": 50, "ס": 60, "ע": 70, "פ": 80, "ף": 80, "צ": 90, "ץ": 90, "ק": 100, "ר": 200, "ש": 300, "ת": 400 };
+  function hebNum(t) {
+    t = t.replace(/["']/g, "");
+    if (!t || t.length > 3) return null;
+    var n = 0; for (var i = 0; i < t.length; i++) { if (!HEB[t[i]]) return null; n += HEB[t[i]]; }
+    return n;
+  }
+  var ALIASES = { "נצרת עילית": "נוף הגליל", "פתח תקוה": "פתח תקווה", "מודיעין מכבים רעות": "מודיעין-מכבים-רעות", "מודיעין": "מודיעין-מכבים-רעות", "בנימינה": "בנימינה-גבעת עדה", "ת\"א": "תל אביב-יפו", "תא": "תל אביב-יפו", "תל אביב": "תל אביב-יפו", "יפו": "תל אביב-יפו", "תל-אביב": "תל אביב-יפו" };
+
+  function normalize(q) {
+    var s = q.replace(/״/g, '"').replace(/[׳`’]/g, "'").replace(/[–־]/g, "-").replace(/\s+/g, " ").trim();
+    s = s.replace(/(^|,\s*)(רחוב|רח'|רח\.|רח)\s+/g, "$1");
+    s = s.replace(/(^|[\s,])(שד'|שד\.)\s*/g, "$1שדרות ");
+    s = s.replace(/^(מושב|קיבוץ|קבוץ)\s+(?=\S)/, "");
+    s = s.replace(/(\d+)\s*\/\s*\d+/g, "$1").replace(/\s*(דירה|כניסה)\s*\S+/g, "");
+    s = s.replace(/(\s)([א-ת]{1,2}'|[א-ת]{1,2}"[א-ת])(?=\s*,)/g, function (m, sp, tok) { var n = hebNum(tok); return n ? sp + n : m; });
+    return s.replace(/\s*,\s*/g, ", ").replace(/\s+/g, " ").replace(/^[\s,]+|[\s,]+$/g, "");
+  }
+  function plain(s) { return s.replace(/["'״׳`\-–־,.()]/g, " ").replace(/\s+/g, " ").trim(); }
+  function skel(s) { return plain(s).replace(/[ךםןףץ]/g, function (c) { return { "ך": "כ", "ם": "מ", "ן": "נ", "ף": "פ", "ץ": "צ" }[c]; }).replace(/[\sאוי]/g, ""); }
+  var LOC = null; // locality name -> {exact, skel, n, y, x, bbox}
+  function localities() {
+    if (LOC) return LOC;
+    LOC = {};
+    D.b.forEach(function (b) {
+      var L0 = LOC[b.t] || (LOC[b.t] = { name: b.t, n: 0, y: 0, x: 0, s: 90, w: 180, nn: -90, e: -180, k: 0 });
+      L0.n++; L0.k += b.k.length; L0.y += b.y; L0.x += b.x;
+      L0.s = Math.min(L0.s, b.y); L0.nn = Math.max(L0.nn, b.y); L0.w = Math.min(L0.w, b.x); L0.e = Math.max(L0.e, b.x);
+    });
+    Object.keys(LOC).forEach(function (k) { var o = LOC[k]; o.y /= o.n; o.x /= o.n; });
+    return LOC;
+  }
+  // Find a locality in the data for a typed city name (exact after punctuation, then a vowel-less skeleton).
+  function findLoc(city) {
+    if (!city) return null;
+    var c = ALIASES[city.trim()] || ALIASES[plain(city)] || city, L = localities(), names = Object.keys(L);
+    var pc = plain(c), sc = skel(c), i;
+    for (i = 0; i < names.length; i++) if (plain(names[i]) === pc || plain(names[i].split(/\s+-\s+/)[0]) === pc) return L[names[i]];
+    for (i = 0; i < names.length; i++) if (skel(names[i]) === sc) return L[names[i]];
+    return null;
+  }
+  // Split "<street> <num>, <city>" (comma optional).
+  function parse(n) {
+    var street = n, city = "", loc = null, m;
+    var parts = n.split(/\s*,\s*/);
+    if (parts.length > 1) { city = parts.pop(); street = parts.join(" "); loc = findLoc(city); }
+    else {
+      var w = n.split(" ");
+      for (var k = Math.min(4, w.length); k >= 1 && !loc; k--) {
+        var cand = w.slice(w.length - k).join(" "), l = findLoc(cand);
+        if (l) { loc = l; city = cand; street = w.slice(0, w.length - k).join(" "); }
+      }
+    }
+    if (ALIASES[city]) city = ALIASES[city];
+    var num = null;
+    if ((m = street.match(/(^|\s)(\d+)[א-ת]?(?=\s|$)/))) { num = m[2]; street = (street.slice(0, m.index) + " " + street.slice(m.index + m[0].length)).replace(/\s+/g, " ").trim(); }
+    return { street: street, num: num, city: city, loc: loc };
+  }
+  function cityOk(names, p) {
+    if (!p.city) return true;
+    var want = [skel(p.city)]; if (p.loc) want.push(skel(p.loc.name), skel(p.loc.name.split(/\s+-\s+/)[0]));
+    return names.some(function (nm) {
+      if (!nm) return false; var s = skel(nm);
+      return want.some(function (w) { return w.length >= 2 && (s === w || (s.length >= 3 && w.indexOf(s) >= 0) || (w.length >= 3 && s.indexOf(w) >= 0)); });
     });
   }
-  // Query variants, tried in order until one returns a result.
-  function variants(q) {
-    var noPrefix = q.replace(/(^|[\s,])(רחוב|רח['׳]?|שדרות|שד['׳]|שדרת|סמטת|דרך)\s+/g, "$1").replace(/\s+/g, " ").trim();
-    var noNum = noPrefix.replace(/(^|[\s,])\d+[א-ת]?(?=[\s,]|$)/g, "$1").replace(/\s*,\s*,/g, ",").replace(/\s+/g, " ").replace(/^[\s,]+|[\s,]+$/g, "");
-    var out = [q];
-    if (noPrefix !== q) out.push(noPrefix);
-    if (noNum && noNum !== noPrefix) out.push(noNum);
-    return out;
+  // Street names: also fold common transliteration variants (צלאח/סלאח, ת/ט, ק/כ).
+  function sskel(s) { return skel(s).replace(/[צש]/g, "ס").replace(/ט/g, "ת").replace(/כ/g, "ק"); }
+  function box(l) { var p = 0.03; return [l.w - p, l.nn + p, l.e + p, l.s - p].join(","); }
+
+  function nomUrl(params) {
+    return "https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&countrycodes=il,ps&accept-language=he&" + params;
   }
+  function nom(params, p, how) {
+    return throttled("nom", nomUrl(params)).then(function (res) {
+      for (var i = 0; i < res.length; i++) {
+        var r = res[i], a = r.address || {};
+        if (!cityOk([a.city, a.town, a.village, a.hamlet, a.municipality, a.suburb, a.city_district, a.isolated_dwelling], p)) continue;
+        var prec = a.house_number ? "house" : (r.category === "highway" || r.addresstype === "road") ? "street" : "area";
+        return { lat: +r.lat, lon: +r.lon, label: r.display_name.split(",").slice(0, 4).join(",").trim(), prec: prec, src: "OpenStreetMap (" + how + ")" };
+      }
+      return null;
+    });
+  }
+  function photon(q, p) {
+    var u = "https://photon.komoot.io/api/?limit=5&bbox=34.2,29.4,35.95,33.4&q=" + encodeURIComponent(q) + (p.loc ? "&lat=" + p.loc.y.toFixed(4) + "&lon=" + p.loc.x.toFixed(4) : "");
+    return throttled("photon", u).then(function (res) {
+      var f = (res.features || []);
+      for (var i = 0; i < f.length; i++) {
+        var pr = f[i].properties || {};
+        if (!cityOk([pr.city, pr.district, pr.locality, pr.type === "city" || pr.type === "locality" ? pr.name : null], p)) continue;
+        if (p.street && pr.street && skel(pr.street).indexOf(skel(p.street.replace(/^שדרות\s+/, ""))) < 0 && skel(p.street).indexOf(skel(pr.street)) < 0) continue;
+        var prec = pr.housenumber ? "house" : pr.type === "street" ? "street" : "area";
+        var c = f[i].geometry.coordinates;
+        return { lat: c[1], lon: c[0], label: [pr.name, pr.street && (pr.street + " " + (pr.housenumber || "")), pr.city].filter(Boolean).join(", "), prec: prec, src: "Photon" };
+      }
+      return null;
+    });
+  }
+  function govmap(p) {
+    var q = p.street + " " + p.num + " " + p.city;
+    return throttled("govmap", "https://www.govmap.gov.il/api/search-service/autocomplete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ searchText: q }) }).then(function (res) {
+      var rs = (res && res.results) || [];
+      var st = sskel(p.street.replace(/^שדרות\s+/, ""));
+      for (var i = 0; i < rs.length && i < 5; i++) {
+        var r = rs[i], t = r.text || "", m = /POINT\(([\d.\-]+) ([\d.\-]+)\)/.exec(r.shape || "");
+        if (r.type !== "address" || !m) continue;
+        var tm = t.match(/^(.*?)\s(\d+)\s(.*)$/);
+        if (!tm || tm[2] !== String(p.num) || sskel(tm[1]) !== st || !cityOk([tm[3]], p)) continue; // the street, number and city must all match
+        var x = +m[1], y = +m[2];
+        return { lat: (2 * Math.atan(Math.exp(y / 6378137)) - Math.PI / 2) * 180 / Math.PI, lon: x / 6378137 * 180 / Math.PI, label: t, prec: "house", src: "GovMap" };
+      }
+      return null;
+    });
+  }
+
+  var PREC = { house: "כתובת מדויקת", street: "רחוב בלבד (מספר הבית לא נמצא)", area: "שכונה/אזור", settlement: "מרכז היישוב", local: "לפי כתובת קלפי תואמת" };
   function search() {
     var q = $("q").value.trim();
     $("alts").innerHTML = "";
     if (!q || !D) return;
     history.replaceState(null, "", "?q=" + encodeURIComponent(q));
-    var id = ++searchId, vs = variants(q), i = 0;
+    var id = ++searchId, n = normalize(q), p = parse(n);
+    var free = p.loc && p.city ? (p.street + (p.num ? " " + p.num : "") + ", " + p.city).replace(/^,\s*/, "") : n;
     status("מחפש את הכתובת…");
+    // A bare settlement name: use that settlement's polling places from the data.
+    if (!p.street && p.loc) return settlement(p.loc, "");
+    var steps = [function () { return nom("q=" + encodeURIComponent(free), p, "חיפוש חופשי"); }];
+    if (p.city) steps.push(function () {
+      return nom("street=" + encodeURIComponent((p.num ? p.num + " " : "") + p.street) + "&city=" + encodeURIComponent(p.city) + (p.loc ? "&viewbox=" + box(p.loc) + "&bounded=1" : ""), p, "חיפוש מובנה");
+    });
+    if (/^שדרות\s/.test(p.street)) {
+      var s2 = p.street.replace(/^שדרות\s+/, "");
+      steps.push(function () { return nom("q=" + encodeURIComponent(s2 + (p.num ? " " + p.num : "") + (p.city ? ", " + p.city : "")) + (p.loc ? "&viewbox=" + box(p.loc) + "&bounded=1" : ""), p, "בלי 'שדרות'"); });
+    }
+    steps.push(function () { return photon(free, p); });
+    if (p.num && p.street && p.city) steps.push(function () { return govmap(p); });
+    var best = null, failed = 0, i = 0;
     (function next() {
       if (id !== searchId) return;
-      if (i >= vs.length) return localSearch(q, "הכתובת לא נמצאה ב-OpenStreetMap. ");
-      var v = vs[i++];
-      nominatim(v).then(function (res) {
+      if (i >= steps.length) {
+        if (best) return show(best);
+        if (p.loc) return settlement(p.loc, failed === steps.length ? "שירותי איתור הכתובות לא זמינים כרגע. " : "הכתובת לא נמצאה. ");
+        return localSearch(q, failed === steps.length ? "שירותי איתור הכתובות לא זמינים כרגע. " : "הכתובת לא נמצאה. ");
+      }
+      steps[i++]().then(function (r) {
         if (id !== searchId) return;
-        if (!res.length) return next();
-        var note = (i === vs.length && vs.length > 1 && /\d/.test(q)) ? " (מספר הבית לא נמצא, מוצג הרחוב)" : "";
-        pick(res[0], note);
-        if (res.length > 1) {
-          $("alts").innerHTML = '<span class="meta">התכוונתם ל:</span>';
-          res.slice(1).forEach(function (r) {
-            var bt = document.createElement("button"); bt.textContent = shortName(r.display_name);
-            bt.onclick = function () { pick(r, ""); }; $("alts").appendChild(bt);
-          });
-        }
-      }).catch(function () { if (id === searchId) localSearch(q, "שירות איתור הכתובות לא זמין כרגע. "); });
+        if (r && (r.prec === "house" || !p.num)) return show(r);
+        if (r && !best) best = r;
+        next();
+      }, function () { failed++; next(); });
     })();
+    function show(r) {
+      if (id !== searchId) return;
+      status("נמצא: " + r.label + " · דיוק: " + PREC[r.prec] + " · מקור: " + r.src + ". אפשר לגרור את הסמן כדי לדייק.");
+      locate(r.lat, r.lon, r.label, r.prec);
+    }
   }
-  function shortName(s) { return s.split(",").slice(0, 4).join(",").trim(); }
-  function pick(r, note) {
-    status("נמצא: " + r.display_name + (note || ""));
-    locate(+r.lat, +r.lon, shortName(r.display_name));
+  function settlement(l, why) {
+    status(why + "מוצג מרכז היישוב " + l.name + " (" + l.k + " קלפיות ב-" + l.n + " מקומות). דיוק: " + PREC.settlement + ". לחצו על המפה או גררו את הסמן כדי לדייק.");
+    locate(l.y, l.x, "מרכז " + l.name, "settlement");
   }
 
-  // Fallback: match the query against the polling-place addresses (locality first, then street)
-  var ALIASES = { "נצרת עילית": "נוף הגליל", "פתח תקוה": "פתח תקווה", "מודיעין מכבים רעות": "מודיעין-מכבים-רעות", "בנימינה": "בנימינה-גבעת עדה" };
+  // Last resort: match the query against the polling-place addresses (locality first, then street)
   function norm(s) { return " " + s.replace(/["'״׳`\-–,.()]/g, " ").replace(/\s+/g, " ").trim() + " "; }
   function localSearch(q, why) {
-    var nq = norm(q).replace(/ קריית /g, " קרית ").replace(/ ת א /g, " תל אביב ");
-    Object.keys(ALIASES).forEach(function (k) { nq = nq.replace(norm(k), norm(ALIASES[k])); });
+    var nq = norm(normalize(q)).replace(/ קריית /g, " קרית ");
     var locs = {};
     D.b.forEach(function (b) {
       var forms = [norm(b.t), norm(b.t.split(/\s*-\s*/)[0])];
@@ -209,14 +338,10 @@
         return Math.abs(an - qn) - Math.abs(bn - qn);
       });
       var b = best[0];
-      status(why + "מציג לפי כתובת קלפי תואמת: " + b.a + ", " + b.t + (best.length > 1 ? " (נמצאו " + best.length + " התאמות, מוצגת הקרובה במספר הבית)" : ""));
-      return locate(b.y, b.x, b.a + ", " + b.t);
+      status(why + "מוצג לפי כתובת קלפי תואמת: " + b.a + ", " + b.t + ". דיוק: " + PREC.local + ". גררו את הסמן כדי לדייק.");
+      return locate(b.y, b.x, b.a + ", " + b.t, "local");
     }
-    if (loc) {
-      var y = 0, x = 0; pool.forEach(function (b) { y += b.y; x += b.x; });
-      status(why + "הרחוב לא נמצא; מוצג מרכז היישוב " + loc + ". לחצו על המפה כדי לדייק.");
-      return locate(y / pool.length, x / pool.length, "מרכז " + loc);
-    }
+    if (loc) return settlement(localities()[loc], why);
     status(why + "לא נמצאה התאמה. נסו לכתוב רחוב, מספר ועיר, או לחצו על המפה.");
   }
 
