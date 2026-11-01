@@ -173,6 +173,26 @@ table.cmp td.d{direction:ltr;text-align:end;color:var(--muted)}
 .leaflet-popup-content-wrapper{border-radius:var(--r);box-shadow:0 10px 30px -12px rgba(0,0,0,.45)}
 .leaflet-popup-content{font-size:.86rem;line-height:1.5;margin:12px 14px}
 .leaflet-popup-content b{font-family:var(--serif);font-size:1rem}
+.kalpi-popup .leaflet-popup-content-wrapper,.kalpi-popup .leaflet-popup-tip{background:var(--card);color:var(--ink)}
+.kalpi-popup .leaflet-popup-content{width:min(300px,calc(100vw - 64px))!important;margin:18px 16px;max-height:var(--popup-max-height,60vh);overflow-y:auto}
+.map-popup{direction:rtl;text-align:right;font-family:var(--sans);font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.map-popup-header{padding-inline-end:30px}
+.map-popup-header h3{margin:0 0 4px;font:700 21px/1.3 var(--serif);color:var(--ink)}
+.map-popup-address{color:var(--muted);font-size:13px;line-height:1.6}
+.map-popup-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0;padding:12px 0;border-block:1px solid var(--rule-2)}
+.map-popup-stats dt{font-size:12px;color:var(--muted)}
+.map-popup-stats dd{margin:3px 0 0;font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2}
+.map-popup-stats>div+div{border-inline-start:1px solid var(--rule-2);padding-inline-start:16px}
+.map-popup-section{font-size:12px;font-weight:600;margin-bottom:8px}
+.map-popup-section>span{display:block;font-size:11px;font-weight:400;color:var(--muted)}
+.map-popup-parties{list-style:none;padding:0;margin:0;display:grid;gap:9px}
+.map-popup-parties li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:baseline}
+.map-popup-party{display:flex;align-items:baseline;gap:8px;min-width:0}
+.map-popup-party i{flex:none;width:8px;height:8px;border-radius:50%;align-self:flex-start;margin-top:6px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)}
+.map-popup-value{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.map-popup-empty{color:var(--muted);font-size:13px}
+.leaflet-container .kalpi-popup a.leaflet-popup-close-button{top:5px;left:5px;right:auto;width:36px;height:36px;display:grid;place-items:center;font:24px/1 var(--sans);color:var(--muted);border-radius:4px;text-decoration:none}
+.leaflet-container .kalpi-popup a.leaflet-popup-close-button:hover{background:var(--paper-2);color:var(--ink)}
 .pin{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--ink);color:#fff;font:700 13px/1 var(--sans);border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35)}
 .home{display:block;position:relative;width:22px;height:22px}
 .home::before{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--accent);border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.45)}

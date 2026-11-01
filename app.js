@@ -79,6 +79,17 @@
     o.duration = 1.15; o.easeLinearity = 0.2;
     map.flyToBounds(bounds, o);
   }
+  // Keep the summary clear of both the layer selector and the mobile sheet.
+  map.on("popupopen", function (e) {
+    if (e.popup.options.className !== "kalpi-popup") return;
+    map.stop();
+    var top = mq.matches ? 74 : 110, cover = mq.matches ? sheet.visible("peek") : 0;
+    if (mq.matches) sheet.set("peek");
+    e.popup.options.autoPanPaddingTopLeft = L.point(12, top);
+    e.popup.options.autoPanPaddingBottomRight = L.point(12, cover + 12);
+    e.popup.getElement().style.setProperty("--popup-max-height", Math.max(100, map.getSize().y - cover - top - 64) + "px");
+    e.popup.update();
+  });
   var renderer = L.canvas({ padding: 0.5 });
   // Map click drops a point (desktop); on touch, a long-press does, so panning never triggers a search.
   map.on("click", function (e) { if (!mq.matches) locate(e.latlng.lat, e.latlng.lng, "נקודה במפה", "manual"); });
@@ -98,7 +109,7 @@
       var top = b.agg.parties[0];
       return (b.dot = L.circleMarker([b.y, b.x], { renderer: renderer, radius: 3, weight: 1, color: "#fff",
         fillColor: DOT, fillOpacity: .9 }))
-        .bindPopup(function () { return popupHtml(b); })
+        .bindPopup(function () { return popupHtml(b); }, { className: "kalpi-popup", maxWidth: 300, autoPanPaddingTopLeft: [12, 110], autoPanPaddingBottomRight: [12, 12] })
         .on("click", function (e) { L.DomEvent.stopPropagation(e); });
     }));
     map.on("zoomend", toggleAll); toggleAll();
@@ -162,9 +173,17 @@
       "</span><span>פסולים: " + fmt(a.invalid) + "</span></div>";
   }
   function popupHtml(b) {
-    var a = b.agg, top = a.parties.slice(0, 3).map(function (p) { return esc(p.name) + " " + pct(p.v / a.valid); }).join(" · ");
-    return '<div dir="rtl"><b>' + esc(b.v) + "</b><br>" + esc(b.a) + ", " + esc(b.t) + "<br>" + b.k.length + " קלפיות · הצבעה " +
-      (a.eligible ? pct(a.voters / a.eligible) : "–") + "<br>" + top + "</div>";
+    var a = b.agg;
+    var top = a.valid ? '<div class="map-popup-section">הרשימות המובילות <span>מתוך הקולות הכשרים</span></div><ul class="map-popup-parties">' +
+      a.parties.slice(0, 3).map(function (p) {
+        return '<li><span class="map-popup-party"><i aria-hidden="true" style="background:' + esc(color(p.code)) + '"></i><span>' +
+          esc(p.name) + '</span></span><bdi class="map-popup-value" dir="ltr">' + pct(p.v / a.valid) + '</bdi></li>';
+      }).join("") + '</ul>' : '<div class="map-popup-empty">אין קולות כשרים במקום זה.</div>';
+    return '<section class="map-popup" dir="rtl" aria-label="סיכום מקום הקלפי"><header class="map-popup-header"><h3>' +
+      esc(b.v) + '</h3><div class="map-popup-address">' + esc(b.a) + ', ' + esc(b.t) + '</div></header>' +
+      '<dl class="map-popup-stats"><div><dt>אחוז הצבעה</dt><dd><bdi dir="ltr">' +
+      (a.eligible ? pct(a.voters / a.eligible) : "–") + '</bdi></dd></div><div><dt>קלפיות במבנה</dt><dd>' +
+      fmt(b.k.length) + '</dd></div></dl>' + top + '</section>';
   }
 
   // ---------- geometry ----------
@@ -211,7 +230,7 @@
     nearMarkers = near.map(function (n, i) {
       return L.marker([n.b.y, n.b.x], { title: (i + 1) + ". " + n.b.v, alt: "מקום קלפי " + (i + 1) + ": " + n.b.v, riseOnHover: true,
         icon: L.divIcon({ className: "", html: '<span class="pin">' + (i + 1) + "</span>", iconSize: [28, 28], iconAnchor: [14, 14], popupAnchor: [0, -12] }) })
-        .bindPopup(popupHtml(n.b)).on("click", function () { openCard(i); })
+        .bindPopup(popupHtml(n.b), { className: "kalpi-popup", maxWidth: 300, autoPanPaddingTopLeft: [12, 110], autoPanPaddingBottomRight: [12, 12] }).on("click", function () { openCard(i); if (mq.matches) sheet.set("peek"); })
         .on("mouseover", function () { var li = $("place-" + i); if (li) li.classList.add("hi"); }).on("mouseout", function () { var li = $("place-" + i); if (li) li.classList.remove("hi"); });
     });
     layerNear = L.layerGroup(nearMarkers).addTo(map);
