@@ -83,8 +83,8 @@
   map.on("popupopen", function (e) {
     if (e.popup.options.className !== "kalpi-popup") return;
     map.stop();
-    var top = mq.matches ? 74 : 110, cover = mq.matches ? sheet.visible("peek") : 0;
     if (mq.matches) sheet.set("peek");
+    var top = mq.matches ? 74 : 110, cover = mq.matches ? sheet.visible("peek") : 0;
     e.popup.options.autoPanPaddingTopLeft = L.point(12, top);
     e.popup.options.autoPanPaddingBottomRight = L.point(12, cover + 12);
     e.popup.getElement().style.setProperty("--popup-max-height", Math.max(100, map.getSize().y - cover - top - 64) + "px");
